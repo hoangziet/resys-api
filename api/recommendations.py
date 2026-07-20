@@ -1,31 +1,173 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+import time
+from typing import List, Optional
 
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel, Field
+
+from core.config import settings
+from inference import load_model, predict
+from models.embeddings import item_embeddings
 from core.security import verify_token
+from core import database
 
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
 
-@router.get("/popular")
-def popular_courses(token_data=Depends(verify_token), limit: int = Query(10, ge=1, le=50)) -> dict:
-    # Placeholder: return popularity-based top courses.
-    return {"source": "popular_fallback", "items": [], "limit": limit}
+class RecommenderRequest(BaseModel):
+    history: list[int] = Field(default_factory=list)
+    limit: int = Field(default=10, ge=1, le=50)
 
 
-@router.get("/for-you")
-def for_you(token_data=Depends(verify_token), limit: int = Query(10, ge=1, le=50)) -> dict:
-    # Placeholder: return personalized recommendations.
-    return {"source": "bert4rec", "items": [], "limit": limit}
+class SimilarityRequest(BaseModel):
+    limit: int = Field(default=10, ge=1, le=50)
 
 
-@router.get("/you-may-also-like")
-def you_may_also_like(token_data=Depends(verify_token), limit: int = Query(10, ge=1, le=50)) -> dict:
-    # Placeholder: return vector similarity or fallback results.
-    return {"source": "vector_similarity", "items": [], "limit": limit}
+_better_model = None
 
 
-@router.get("/similar/{course_id}")
-def similar_courses(course_id: int, token_data=Depends(verify_token), limit: int = Query(10, ge=1, le=50)) -> dict:
-    # Placeholder: return course-detail similar course recommendations.
-    return {"source": "vector_similarity", "course_id": course_id, "items": [], "limit": limit}
+def _load_recommendation_model():
+    global _better_model
+    if _better_model is None:
+        model, _, _ = load_model(settings.model_checkpoint_path)
+        _better_model = model
+    return _better_model
+
+
+@router.post("/popular")
+def popular_courses(request: RecommenderRequest, token_data=Depends(verify_token)) -> dict:
+    start_time = time.perf_counter()
+    items = item_embeddings.get_popular_items(limit=request.limit)
+    latency_ms = (time.perf_counter() - start_time) * 1000
+    
+    database.log_recommendation(
+        username=token_data.username,
+        strategy="popularity_nb_views",
+        latency_ms=latency_ms,
+        history=[],
+        results=[item["item_idx"] for item in items]
+    )
+    
+    return {"source": "popular", "items": items, "limit": request.limit, "latency_ms": latency_ms}
+
+
+@router.post("/for-you")
+def for_you(request: RecommenderRequest, token_data=Depends(verify_token)) -> dict:
+    start_time = time.perf_counter()
+    
+    history = request.history
+    if not history:
+        history = database.get_user_history(token_data.username)
+        
+    if not history:
+        return {"source": "bert4rec", "items": [], "limit": request.limit, "latency_ms": 0.0}
+
+    try:
+        model = _load_recommendation_model()
+        top_items = predict(model, history, max_len=model.pos_embedding.num_embeddings, top_k=request.limit)
+        
+        # Apply relative softmax over top-k logits to convert them to match percentages
+        import math
+        logits = [score for _, score in top_items]
+        max_logit = max(logits) if logits else 0.0
+        exp_logits = [math.exp(l - max_logit) for l in logits]
+        sum_exp = sum(exp_logits)
+        probs = [e / sum_exp for e in exp_logits] if sum_exp > 0 else [0.0] * len(logits)
+        
+        items = [
+            item_embeddings.serialize_item(item_idx) | {"score": prob} 
+            for (item_idx, _), prob in zip(top_items, probs)
+        ]
+        strategy = "bert4rec_personalized"
+    except Exception:
+        items = item_embeddings.get_popular_items(limit=request.limit)
+        strategy = "popular_fallback_error"
+        
+    latency_ms = (time.perf_counter() - start_time) * 1000
+    database.log_recommendation(
+        username=token_data.username,
+        strategy=strategy,
+        latency_ms=latency_ms,
+        history=history,
+        results=[item["item_idx"] for item in items]
+    )
+    
+    return {
+        "source": strategy,
+        "items": items,
+        "limit": request.limit,
+        "latency_ms": latency_ms
+    }
+
+
+
+@router.post("/you-may-also-like")
+def you_may_also_like(request: RecommenderRequest, token_data=Depends(verify_token)) -> dict:
+    start_time = time.perf_counter()
+    
+    history = request.history
+    if not history:
+        history = database.get_user_history(token_data.username)
+        
+    if not history:
+        return {"source": "vector_similarity", "items": [], "limit": request.limit, "latency_ms": 0.0}
+
+    anchor_idx = history[-1]
+    try:
+        recommendations = item_embeddings.similar_items(anchor_idx, top_k=request.limit)
+        items = [item_embeddings.serialize_item(item_idx) | {"score": score} for item_idx, score in recommendations]
+        strategy = "vector_similarity"
+    except Exception:
+        items = item_embeddings.get_popular_items(limit=request.limit)
+        strategy = "popular_fallback_error"
+        
+    latency_ms = (time.perf_counter() - start_time) * 1000
+    database.log_recommendation(
+        username=token_data.username,
+        strategy=strategy,
+        latency_ms=latency_ms,
+        history=history,
+        results=[item["item_idx"] for item in items]
+    )
+    
+    return {
+        "source": strategy, 
+        "anchor_item_idx": anchor_idx, 
+        "items": items, 
+        "limit": request.limit, 
+        "latency_ms": latency_ms
+    }
+
+
+@router.post("/similar/{course_id}")
+def similar_courses(course_id: int, request: SimilarityRequest, token_data=Depends(verify_token)) -> dict:
+    start_time = time.perf_counter()
+    try:
+        recommendations = item_embeddings.similar_items(course_id, top_k=request.limit)
+        items = [item_embeddings.serialize_item(item_idx) | {"score": score} for item_idx, score in recommendations]
+        strategy = "vector_similarity"
+    except Exception:
+        items = item_embeddings.get_popular_items(limit=request.limit)
+        strategy = "popular_fallback_error"
+        
+    latency_ms = (time.perf_counter() - start_time) * 1000
+    database.log_recommendation(
+        username=token_data.username,
+        strategy=strategy,
+        latency_ms=latency_ms,
+        history=[course_id],
+        results=[item["item_idx"] for item in items]
+    )
+    
+    return {
+        "source": strategy, 
+        "course_id": course_id, 
+        "items": items, 
+        "limit": request.limit, 
+        "latency_ms": latency_ms
+    }
+
+
+
+

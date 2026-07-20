@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from pathlib import Path
-import os
 
 
 @dataclass
@@ -10,7 +10,8 @@ class Settings:
     app_name: str = os.getenv("APP_NAME", "MARS Recommender API")
     api_prefix: str = os.getenv("API_PREFIX", "/api/v1")
     artifact_root: Path = Path(os.getenv("ARTIFACT_ROOT", "artifacts/recommender/current"))
-    model_checkpoint_path: Path = Path(os.getenv("MODEL_CHECKPOINT_PATH", "models/checkpoints/checkpoint.pt"))
+    model_checkpoint_path: Path = Path(os.getenv("MODEL_CHECKPOINT_PATH", "models/checkpoints/bert4rec.pt"))
+    text_embeddings_path: Path = Path(os.getenv("TEXT_EMBEDDINGS_PATH", "models/sentence-camembert-base.pt"))
     environment: str = os.getenv("ENVIRONMENT", "development")
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "replace-with-secure-key")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")

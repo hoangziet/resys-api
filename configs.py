@@ -1,1 +1,0 @@
-MODEL_CHECKPOINT_PATH="models/checkpoints/checkpoint.pt"

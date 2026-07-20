@@ -7,7 +7,7 @@ Usage::
 
     from inference import load_model, predict, recommend
 
-    model, n_items, max_len = load_model("models/checkpoints/checkpoint.pt")
+    model, n_items, max_len = load_model("models/checkpoints/bert4rec.pt")
     top_items = predict(model, history=[1, 2, 3], max_len=max_len, top_k=10)
     recs = recommend(model, [1, 2, 3], max_len=max_len, top_k=10)
 """
@@ -20,8 +20,9 @@ from pathlib import Path
 import torch
 from torch import Tensor
 
-from configs import MODEL_CHECKPOINT_PATH
-from models.model import BERT4Rec
+from core.config import settings
+
+from models.bert4recpy import BERT4Rec, TextItemEncoder
 
 logger = logging.getLogger(__name__)
 Device = str | torch.device
@@ -34,6 +35,7 @@ def _resolve_device(device: Device | None = None) -> torch.device:
 def load_model(
     ckpt_path: str | Path,
     device: Device | None = None,
+    text_embeddings_path: str | Path | None = None,
 ) -> tuple[BERT4Rec, int, int]:
     ckpt_path = Path(ckpt_path)
     if not ckpt_path.exists():
@@ -43,12 +45,26 @@ def load_model(
     state_dict = checkpoint["state_dict"]
     params = _infer_params(state_dict)
 
+    item_encoder = None
+    if text_embeddings_path is None:
+        text_embeddings_path = Path(settings.text_embeddings_path)
+    else:
+        text_embeddings_path = Path(text_embeddings_path)
+
+    if text_embeddings_path.exists():
+        item_encoder = TextItemEncoder.from_checkpoint(
+            hidden_dim=params["hidden_dim"],
+            path=text_embeddings_path,
+        )
+        logger.info("Loaded text embeddings from %s", text_embeddings_path)
+
     model = BERT4Rec(
         n_items=params["n_items"],
         max_len=params["max_len"],
         hidden_dim=params["hidden_dim"],
         num_heads=params["num_heads"],
         num_layers=params["num_layers"],
+        item_encoder=item_encoder,
     )
 
     missing, unexpected = model.load_state_dict(state_dict, strict=False)
@@ -133,7 +149,7 @@ def _pad_sequence(seq: list[int], max_len: int, pad_token: int = 0) -> list[int]
 
 
 if __name__ == "__main__":
-    model, _, max_len = load_model(MODEL_CHECKPOINT_PATH)
+    model, _, max_len = load_model(settings.model_checkpoint_path)
     history = [1, 2, 3]
     for item_idx, score in predict(model, history, max_len=max_len, top_k=10):
         print(f"Item idx: {item_idx}, Score: {score}")

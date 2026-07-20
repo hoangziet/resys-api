@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MARS Course Recommender</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <!-- Custom Stylesheet -->
+  <link rel="stylesheet" href="/assets/style.css" />
+</head>
+<body>
+  <!-- Toast Notification System -->
+  <div id="toast-container"></div>
+
+  <!-- Loading Overlay -->
+  <div id="loading-overlay" class="hidden">
+    <div class="spinner"></div>
+    <p>Loading recommender systems...</p>
+  </div>
+
+  <!-- MAIN APP CONTAINER -->
+  <div id="app">
+    <!-- AUTHENTICATION SCREEN -->
+    <div id="auth-screen" class="auth-container">
+      <div class="auth-card">
+        <div class="auth-header">
+          <div class="logo">
+            <i class="fa-solid fa-graduation-cap logo-icon"></i>
+            <span>MARS RecSys</span>
+          </div>
+          <h1>Welcome back</h1>
+          <p>Explore your personalized learning path</p>
+        </div>
+
+        <!-- Login Form -->
+        <form id="login-form" class="auth-form">
+          <div class="form-group">
+            <label for="login-username"><i class="fa-regular fa-user"></i> Username</label>
+            <input type="text" id="login-username" placeholder="e.g. learner" required autocomplete="username" />
+          </div>
+          <div class="form-group">
+            <label for="login-password"><i class="fa-regular fa-key"></i> Password</label>
+            <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password" />
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+          <p class="auth-switch">Don't have an account? <a href="#" id="go-to-register">Register here</a></p>
+        </form>
+
+        <!-- Register Form -->
+        <form id="register-form" class="auth-form hidden">
+          <div class="form-group">
+            <label for="register-username"><i class="fa-regular fa-user"></i> Username</label>
+            <input type="text" id="register-username" placeholder="Choose a username" required autocomplete="username" />
+          </div>
+          <div class="form-group">
+            <label for="register-password"><i class="fa-regular fa-key"></i> Password</label>
+            <input type="password" id="register-password" placeholder="Create a password" required autocomplete="new-password" />
+          </div>
+          <button type="submit" class="btn btn-success btn-block">Create Account</button>
+          <p class="auth-switch">Already have an account? <a href="#" id="go-to-login">Log in here</a></p>
+        </form>
+
+        <div class="auth-hints">
+          <p><i class="fa-solid fa-circle-info"></i> Demo accounts:</p>
+          <ul>
+            <li>Learner: <code>learner</code> / <code>secret</code></li>
+            <li>Admin: <code>admin</code> / <code>adminsecret</code></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- DASHBOARD SCREEN -->
+    <div id="dashboard-screen" class="dashboard-container hidden">
+      <!-- SIDEBAR -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">
+            <i class="fa-solid fa-graduation-cap logo-icon"></i>
+            <span>MARS RecSys</span>
+          </div>
+        </div>
+
+        <nav class="sidebar-nav">
+          <a href="#" class="nav-item active" data-tab="dashboard">
+            <i class="fa-solid fa-house-chimney"></i>
+            <span>Dashboard</span>
+          </a>
+          <a href="#" class="nav-item" data-tab="search">
+            <i class="fa-solid fa-magnifying-glass"></i>
+            <span>Catalog Search</span>
+          </a>
+          <a href="#" class="nav-item" data-tab="history">
+            <i class="fa-solid fa-book-open-reader"></i>
+            <span>Learning History</span>
+          </a>
+          <a href="#" class="nav-item admin-only hidden" data-tab="admin">
+            <i class="fa-solid fa-chart-line"></i>
+            <span>Admin Console</span>
+          </a>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="user-profile">
+            <div class="avatar"><i class="fa-solid fa-user-tie"></i></div>
+            <div class="user-info">
+              <span id="user-display-name">Learner</span>
+              <span id="user-role-badge" class="badge">Learner</span>
+            </div>
+          </div>
+          <button id="btn-logout" class="btn btn-logout">
+            <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
+          </button>
+        </div>
+      </aside>
+
+      <!-- MAIN CONTENT AREA -->
+      <main class="main-content">
+        <!-- TOPBAR -->
+        <header class="topbar">
+          <h1 id="tab-title">Learning Dashboard</h1>
+          <div class="topbar-actions">
+            <div class="status-indicator">
+              <span class="status-dot green"></span>
+              <span class="status-text">BERT4Rec: Active</span>
+            </div>
+          </div>
+        </header>
+
+        <!-- TAB CONTENT: DASHBOARD -->
+        <section id="tab-dashboard" class="tab-pane active">
+          <!-- Welcome Widget -->
+          <div class="welcome-banner">
+            <div class="welcome-text">
+              <h2>Welcome to MARS Recommendation System!</h2>
+              <p>Your interactive sequence-based platform for advanced technical courses. Start studying, updating your history, and see recommendations adapt in real time.</p>
+            </div>
+            <div class="welcome-stats">
+              <div class="stat-card">
+                <span class="stat-num" id="stat-history-count">0</span>
+                <span class="stat-label">Courses Learned</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Recommendation Rails -->
+          <div class="recs-grid">
+            <!-- Rail: Popular (Trending Courses) -->
+            <div class="rail-container">
+              <div class="rail-header">
+                <h3><i class="fa-solid fa-fire"></i> Trending Courses <span class="badge badge-orange">Popularity Fallback</span></h3>
+                <span class="rail-subtitle">Highest trending courses on the MARS catalog</span>
+              </div>
+              <div class="rail-slider" id="rail-popular">
+                <!-- Cards injected here -->
+              </div>
+            </div>
+
+            <!-- Rail: For You (BERT4Rec) -->
+            <div class="rail-container">
+              <div class="rail-header">
+                <h3><i class="fa-solid fa-sparkles"></i> For You <span class="badge badge-indigo">BERT4Rec</span></h3>
+                <span class="rail-subtitle">Sequence model predicting your next distinct course</span>
+              </div>
+              <div class="rail-slider" id="rail-for-you">
+                <!-- Cards injected here -->
+              </div>
+            </div>
+
+            <!-- Rail: You May Also Like (Vector Similarity) -->
+            <div class="rail-container">
+              <div class="rail-header">
+                <h3><i class="fa-solid fa-thumbs-up"></i> You May Also Like <span class="badge badge-blue">Text Vector Similarity</span></h3>
+                <span class="rail-subtitle">Courses content-wise similar to your latest activity</span>
+              </div>
+              <div class="rail-slider" id="rail-you-may-also-like">
+                <!-- Cards injected here -->
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB CONTENT: SEARCH -->
+        <section id="tab-search" class="tab-pane hidden">
+          <div class="search-panel">
+            <div class="search-bar-wrapper">
+              <i class="fa-solid fa-magnifying-glass search-icon"></i>
+              <input type="text" id="search-input" placeholder="Search courses by title, description, software, or technology..." />
+              <button id="search-clear" class="btn-clear hidden"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            
+            <div class="search-filters">
+              <div class="filter-group">
+                <label for="filter-difficulty">Difficulty</label>
+                <select id="filter-difficulty">
+                  <option value="">All Difficulties</option>
+                  <option value="Découverte">Découverte (Beginner)</option>
+                  <option value="Intermédiaire">Intermédiaire (Intermediate)</option>
+                  <option value="Avancé">Avancé (Advanced)</option>
+                </select>
+              </div>
+              
+              <div class="filter-group">
+                <label for="filter-language">Language</label>
+                <select id="filter-language">
+                  <option value="">All Languages</option>
+                  <option value="fr">French (fr)</option>
+                  <option value="en">English (en)</option>
+                </select>
+              </div>
+
+              <div class="filter-group">
+                <label for="filter-type">Type</label>
+                <select id="filter-type">
+                  <option value="">All Types</option>
+                  <option value="tutoriel">Tutoriel</option>
+                  <option value="webcast">Webcast</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="search-results-info">
+            <span id="search-count">Showing 0 courses</span>
+          </div>
+
+          <div class="grid-list" id="search-results-grid">
+            <!-- Cards injected here -->
+          </div>
+        </section>
+
+        <!-- TAB CONTENT: HISTORY -->
+        <section id="tab-history" class="tab-pane hidden">
+          <div class="history-controls">
+            <div class="history-summary">
+              <h2>My Study Journal</h2>
+              <p>Your history represents the chronological sequence feed passed to the <strong>BERT4Rec sequence model</strong>. Modifying items will instantly adjust your recommendations.</p>
+            </div>
+            <button id="btn-clear-history" class="btn btn-danger-outline"><i class="fa-regular fa-trash-can"></i> Clear History</button>
+          </div>
+
+          <div id="history-empty" class="empty-state hidden">
+            <i class="fa-solid fa-hourglass-empty"></i>
+            <h3>Your history is empty</h3>
+            <p>Go to the catalog search tab and mark some courses as learned to build up your profile!</p>
+          </div>
+
+          <div class="history-timeline" id="history-timeline-container">
+            <!-- Timeline elements injected here -->
+          </div>
+        </section>
+
+        <!-- TAB CONTENT: ADMIN -->
+        <section id="tab-admin" class="tab-pane hidden">
+          <div class="admin-grid">
+            <!-- Card: System Health -->
+            <div class="admin-card">
+              <h3><i class="fa-solid fa-server"></i> System Health & Metrics</h3>
+              <div class="health-metrics">
+                <div class="metric-row">
+                  <span>SQLite Database File</span>
+                  <span class="badge badge-green">Connected (data/db.sqlite3)</span>
+                </div>
+                <div class="metric-row">
+                  <span>Cache Handler</span>
+                  <span class="badge badge-blue">Local TTL Cache</span>
+                </div>
+                <div class="metric-row">
+                  <span>BERT4Rec Checkpoint</span>
+                  <span class="badge badge-green" id="admin-model-status">Loaded</span>
+                </div>
+                <div class="metric-row">
+                  <span>Max Sequence Length</span>
+                  <span id="admin-model-maxlen" class="metric-value">—</span>
+                </div>
+                <div class="metric-row">
+                  <span>Vocabulary Size</span>
+                  <span id="admin-model-vocab" class="metric-value">—</span>
+                </div>
+                <div class="metric-row">
+                  <span>Embedding Dimension</span>
+                  <span id="admin-model-dim" class="metric-value">—</span>
+                </div>
+              </div>
+              <div class="admin-actions">
+                <button id="btn-sync-catalog" class="btn btn-primary"><i class="fa-solid fa-rotate"></i> Sync Course Catalog</button>
+                <button id="btn-rebuild-emb" class="btn btn-secondary"><i class="fa-solid fa-hammer"></i> Rebuild Vector Embeddings</button>
+              </div>
+            </div>
+
+            <!-- Card: API Query Stats -->
+            <div class="admin-card">
+              <h3><i class="fa-solid fa-gauge-high"></i> Latency Overview</h3>
+              <div class="latency-chart-container">
+                <div class="chart-y-axis">
+                  <span>50ms</span>
+                  <span>25ms</span>
+                  <span>0ms</span>
+                </div>
+                <div class="chart-bars" id="latency-bars">
+                  <!-- Generated bars -->
+                  <div class="chart-placeholder">No logs recorded yet. Query the model to track latencies!</div>
+                </div>
+              </div>
+              <div class="chart-legend">
+                <span><span class="legend-color b4r"></span> BERT4Rec</span>
+                <span><span class="legend-color sim"></span> Similar vector</span>
+                <span><span class="legend-color pop"></span> Popular Fallback</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Logs Panel -->
+          <div class="logs-panel">
+            <div class="logs-header">
+              <h3><i class="fa-solid fa-terminal"></i> Recommendation Request Logs</h3>
+              <button id="btn-refresh-logs" class="btn btn-secondary-outline"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+            </div>
+            <div class="logs-table-wrapper">
+              <table class="logs-table">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>User</th>
+                    <th>Strategy</th>
+                    <th>Latency</th>
+                    <th>Sequence History</th>
+                    <th>Top Recommended Items</th>
+                  </tr>
+                </thead>
+                <tbody id="logs-tbody">
+                  <!-- Injected rows -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- COURSE DETAIL DRAWER -->
+    <div id="detail-drawer" class="drawer-overlay hidden">
+      <div class="drawer-container">
+        <button id="btn-close-drawer" class="btn-close-drawer"><i class="fa-solid fa-xmark"></i></button>
+        
+        <div class="drawer-video-wrapper">
+          <video id="drawer-video" controls poster="/assets/thumbnail.png">
+            <source src="/assets/video.mp4" type="video/mp4">
+            Your browser does not support the video tag.
+          </video>
+        </div>
+
+        <div class="drawer-body">
+          <div class="drawer-header">
+            <div class="drawer-tags" id="drawer-tags-container">
+              <!-- Tags injected here -->
+            </div>
+            <h2 id="drawer-title">Course Title</h2>
+            <p class="drawer-meta" id="drawer-meta-info">fr • Webcast • 33m</p>
+          </div>
+
+          <div class="drawer-desc" id="drawer-description">
+            Course description text goes here...
+          </div>
+
+          <div class="drawer-actions">
+            <button id="btn-toggle-learn" class="btn btn-indigo btn-block">
+              <i class="fa-solid fa-check"></i> Mark as Learned
+            </button>
+          </div>
+
+          <!-- Similar Courses Section -->
+          <div class="drawer-similar-section">
+            <h4>Similar Courses <span class="badge badge-light-blue">Vector Match</span></h4>
+            <div class="similar-grid" id="drawer-similar-courses">
+              <!-- Similar courses injected here -->
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom Scripts -->
+  <script src="/assets/app.js"></script>
+</body>
+</html>

@@ -4,21 +4,39 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
+from pydantic import BaseModel
 
 from core.config import settings
 from core.security import TokenData, create_access_token, verify_token
+from core.database import get_user_by_username, hash_password, create_user
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
+class RegisterRequest(BaseModel):
+    username: str
+    password: str
+
+
+@router.post("/register")
+def register(req: RegisterRequest) -> dict[str, str]:
+    if not req.username or not req.password:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username and password are required")
+    hashed = hash_password(req.password)
+    success = create_user(req.username, hashed, role="learner")
+    if not success:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists")
+    return {"status": "ok", "message": "User registered successfully"}
+
+
 @router.post("/token")
 def login(form_data: OAuth2PasswordRequestForm = Depends()) -> dict[str, str]:
-    # Placeholder: Replace with real user/password lookup and hashing.
-    if form_data.username != "learner" or form_data.password != "secret":
+    user = get_user_by_username(form_data.username)
+    if not user or user["password_hash"] != hash_password(form_data.password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 
     access_token = create_access_token(
-        data={"sub": form_data.username, "role": "learner"},
+        data={"sub": user["username"], "role": user["role"]},
         expires_delta=timedelta(minutes=settings.access_token_expire_minutes),
     )
     return {"access_token": access_token, "token_type": "bearer"}
@@ -27,3 +45,4 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()) -> dict[str, str]:
 @router.get("/me")
 def read_current_user(token_data: TokenData = Depends(verify_token)) -> dict[str, str | None]:
     return {"username": token_data.username, "role": token_data.role}
+

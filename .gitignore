@@ -218,4 +218,16 @@ __marimo__/
 .streamlit/secrets.toml
 
 
-context/
+# Data and database files
+data/*.sqlite3
+data/*.sqlite3-journal
+
+# Ignore other processed splits, but track required course metadata for serving API
+data/processed/*
+!data/processed/.gitkeep
+!data/processed/item_features/item_metadata.csv
+!data/processed/item_features/metadata_vocab.json
+!data/processed/item_features/text_embeddings_manifest.json
+
+# Allow context documents to be tracked in git
+!context/

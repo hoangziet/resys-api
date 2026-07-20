@@ -3,23 +3,39 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from core.security import verify_token
+from core import database
+from models.embeddings import item_embeddings
 
 router = APIRouter(prefix="/history", tags=["history"])
 
 
 @router.get("/")
 def get_history(token_data=Depends(verify_token)) -> dict:
-    # Placeholder: return the authenticated user's learning history.
-    return {"user": token_data.username, "history": []}
+    history_idxs = database.get_user_history(token_data.username)
+    serialized_history = []
+    for idx in history_idxs:
+        try:
+            serialized_history.append(item_embeddings.serialize_item(idx))
+        except KeyError:
+            continue
+    return {"user": token_data.username, "history": serialized_history}
 
 
 @router.post("/")
-def add_history_item(item_id: int, token_data=Depends(verify_token)) -> dict:
-    # Placeholder: add an item to the user's history.
-    return {"user": token_data.username, "item_id": item_id, "status": "added"}
+def add_history_item(item_idx: int, token_data=Depends(verify_token)) -> dict:
+    if item_idx not in item_embeddings.item_idx_set:
+        raise HTTPException(status_code=404, detail=f"Course with item_idx {item_idx} not found")
+    
+    success = database.add_history_item(token_data.username, item_idx)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to add item to history")
+    return {"user": token_data.username, "item_idx": item_idx, "status": "added"}
 
 
-@router.delete("/{item_id}")
-def remove_history_item(item_id: int, token_data=Depends(verify_token)) -> dict:
-    # Placeholder: remove an item from the user's history.
-    return {"user": token_data.username, "item_id": item_id, "status": "removed"}
+@router.delete("/{item_idx}")
+def remove_history_item(item_idx: int, token_data=Depends(verify_token)) -> dict:
+    success = database.remove_history_item(token_data.username, item_idx)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to remove item from history")
+    return {"user": token_data.username, "item_idx": item_idx, "status": "removed"}
+

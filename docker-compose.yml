@@ -1,0 +1,13 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - APP_NAME=MARS Recommender API
+      - API_PREFIX=/api/v1
+      - ENVIRONMENT=production
+      - MODEL_CHECKPOINT_PATH=models/checkpoints/bert4rec.pt
+      - TEXT_EMBEDDINGS_PATH=models/sentence-camembert-base.pt
