@@ -9,5 +9,6 @@ services:
       - APP_NAME=MARS Recommender API
       - API_PREFIX=/api/v1
       - ENVIRONMENT=production
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
       - MODEL_CHECKPOINT_PATH=models/checkpoints/bert4rec.pt
       - TEXT_EMBEDDINGS_PATH=models/sentence-camembert-base.pt
