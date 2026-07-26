@@ -480,28 +480,93 @@ async function refreshDashboard() {
   }
 }
 
+// --- Recommendation Cache (localStorage fallback) ---
+const RECO_CACHE_KEY = "reco_cache";
+const RECO_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getRecoCache() {
+  try {
+    const raw = localStorage.getItem(RECO_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setRecoCache(data) {
+  try {
+    localStorage.setItem(RECO_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+  } catch { /* storage full — ignore */ }
+}
+
+function isRecoCacheValid(cache) {
+  return cache && (Date.now() - cache.ts) < RECO_CACHE_TTL_MS;
+}
+
 // --- Load Recommendations ---
 async function loadRecommendations() {
   // Show Skeletons
   railForYou.innerHTML = renderSkeletons(4);
   railYouMayLike.innerHTML = renderSkeletons(4);
   railPopular.innerHTML = renderSkeletons(4);
-  
+
+  const cached = getRecoCache();
+  let forYouRes, youMayRes, popularRes;
+  let hitRateLimit = false;
+
   try {
-    // 1. For You
-    const forYouRes = await apiRequest("/recommendations/for-you", "POST", { limit: 10 });
-    railForYou.innerHTML = renderCourseCards(forYouRes.items, forYouRes.source);
-
-    // 2. You May Also Like
-    const youMayRes = await apiRequest("/recommendations/you-may-also-like", "POST", { limit: 10 });
-    railYouMayLike.innerHTML = renderCourseCards(youMayRes.items, youMayRes.source);
-
-    // 3. Popular
-    const popularRes = await apiRequest("/recommendations/popular", "POST", { limit: 10 });
-    railPopular.innerHTML = renderCourseCards(popularRes.items, popularRes.source);
-    
+    forYouRes = await apiRequest("/recommendations/for-you", "POST", { limit: 10 });
   } catch (err) {
-    showToast("Recommender Failure", "Could not query recommended course rails: " + err.message, "error");
+    if (err.message?.includes("429") || err.message?.includes("Rate limit")) {
+      hitRateLimit = true;
+    }
+  }
+
+  try {
+    youMayRes = await apiRequest("/recommendations/you-may-also-like", "POST", { limit: 10 });
+  } catch (err) {
+    if (err.message?.includes("429") || err.message?.includes("Rate limit")) {
+      hitRateLimit = true;
+    }
+  }
+
+  try {
+    popularRes = await apiRequest("/recommendations/popular", "POST", { limit: 10 });
+  } catch (err) {
+    if (err.message?.includes("429") || err.message?.includes("Rate limit")) {
+      hitRateLimit = true;
+    }
+  }
+
+  // If at least one succeeded, cache the results
+  if (forYouRes || youMayRes || popularRes) {
+    setRecoCache({ forYou: forYouRes, youMay: youMayRes, popular: popularRes });
+  }
+
+  // Render — prefer fresh data, fallback to cache, then show message
+  if (forYouRes) {
+    railForYou.innerHTML = renderCourseCards(forYouRes.items, forYouRes.source);
+  } else if (cached?.data?.forYou) {
+    railForYou.innerHTML = renderCourseCards(cached.data.forYou.items, cached.data.forYou.source);
+  }
+
+  if (youMayRes) {
+    railYouMayLike.innerHTML = renderCourseCards(youMayRes.items, youMayRes.source);
+  } else if (cached?.data?.youMay) {
+    railYouMayLike.innerHTML = renderCourseCards(cached.data.youMay.items, cached.data.youMay.source);
+  }
+
+  if (popularRes) {
+    railPopular.innerHTML = renderCourseCards(popularRes.items, popularRes.source);
+  } else if (cached?.data?.popular) {
+    railPopular.innerHTML = renderCourseCards(cached.data.popular.items, cached.data.popular.source);
+  }
+
+  if (hitRateLimit) {
+    const msg = isRecoCacheValid(cached)
+      ? "Rate limit reached — showing cached recommendations."
+      : "Rate limit reached — please try again in a moment.";
+    showToast("Slow down", msg, "info");
   }
 }
 

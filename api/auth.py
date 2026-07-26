@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
 from core.config import settings
+from core.rate_limit import limiter
 from core.security import TokenData, create_access_token, verify_token
 from core.database import (
     get_user_by_username,
@@ -24,7 +25,8 @@ class RegisterRequest(BaseModel):
 
 
 @router.post("/register")
-def register(req: RegisterRequest) -> dict[str, str]:
+@limiter.limit("5/minute")
+def register(request: Request, req: RegisterRequest) -> dict[str, str]:
     if not req.username or not req.password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -40,7 +42,10 @@ def register(req: RegisterRequest) -> dict[str, str]:
 
 
 @router.post("/token")
-def login(form_data: OAuth2PasswordRequestForm = Depends()) -> dict[str, str]:
+@limiter.limit("10/minute")
+def login(
+    request: Request, form_data: OAuth2PasswordRequestForm = Depends()
+) -> dict[str, str]:
     user = get_user_by_username(form_data.username)
     if not user or not verify_password(form_data.password, user["password_hash"]):
         raise HTTPException(
