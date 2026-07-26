@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 from pathlib import Path
 
 import bcrypt
+
+from core.config import settings
+
+log = logging.getLogger(__name__)
 
 DB_PATH = Path("data/db.sqlite3")
 
@@ -69,13 +74,22 @@ def init_db():
     if cursor.fetchone()["count"] == 0:
         cursor.execute(
             "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
-            ("learner", hash_password("secret"), "learner"),
+            (
+                settings.learner_username,
+                hash_password(settings.learner_password),
+                "learner",
+            ),
         )
         cursor.execute(
             "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
-            ("admin", hash_password("adminsecret"), "admin"),
+            (settings.admin_username, hash_password(settings.admin_password), "admin"),
         )
         conn.commit()
+        log.info(
+            "Seeded database with users: %s (learner), %s (admin)",
+            settings.learner_username,
+            settings.admin_username,
+        )
 
     conn.close()
 
