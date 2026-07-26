@@ -115,7 +115,8 @@ def for_you(
             for (item_idx, _), prob in zip(top_items, probs)
         ]
         strategy = "bert4rec_personalized"
-    except Exception:
+    except Exception as exc:
+        logger.exception("BERT4Rec inference failed, falling back to popular")
         items = item_embeddings.get_popular_items(limit=body.limit)
         strategy = "popular_fallback_error"
 
@@ -163,7 +164,11 @@ def you_may_also_like(
             for item_idx, score in recommendations
         ]
         strategy = "vector_similarity"
-    except Exception:
+    except Exception as exc:
+        logger.exception(
+            "Vector similarity failed for anchor=%d, falling back to popular",
+            anchor_idx,
+        )
         items = item_embeddings.get_popular_items(limit=body.limit)
         strategy = "popular_fallback_error"
 
@@ -201,7 +206,10 @@ def similar_courses(
             for item_idx, score in recommendations
         ]
         strategy = "vector_similarity"
-    except Exception:
+    except Exception as exc:
+        logger.exception(
+            "Vector similarity failed for course=%d, falling back to popular", course_id
+        )
         items = item_embeddings.get_popular_items(limit=body.limit)
         strategy = "popular_fallback_error"
 

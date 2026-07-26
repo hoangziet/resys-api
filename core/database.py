@@ -178,7 +178,10 @@ def add_history_item(username: str, item_idx: int) -> bool:
             )
             conn.commit()
             return True
-        except Exception:
+        except sqlite3.Error:
+            log.exception(
+                "Failed to add history item user=%s item=%d", username, item_idx
+            )
             return False
 
 
@@ -195,7 +198,10 @@ def remove_history_item(username: str, item_idx: int) -> bool:
             )
             conn.commit()
             return True
-        except Exception:
+        except sqlite3.Error:
+            log.exception(
+                "Failed to remove history item user=%s item=%d", username, item_idx
+            )
             return False
 
 
@@ -209,7 +215,8 @@ def clear_user_history(username: str) -> bool:
             cursor.execute("DELETE FROM user_history WHERE user_id = ?", (user_id,))
             conn.commit()
             return True
-        except Exception:
+        except sqlite3.Error:
+            log.exception("Failed to clear history user=%s", username)
             return False
 
 
@@ -238,7 +245,8 @@ def log_recommendation(
             )
             conn.commit()
             return True
-        except Exception:
+        except sqlite3.Error:
+            log.exception("Failed to log recommendation strategy=%s", strategy)
             return False
 
 
@@ -263,6 +271,7 @@ def cleanup_recommendation_logs(retention_days: int) -> int:
             deleted = cursor.rowcount
             conn.commit()
             return deleted
-        except Exception:
+        except sqlite3.Error:
+            log.exception("Failed to cleanup recommendation logs")
             conn.rollback()
             return 0
