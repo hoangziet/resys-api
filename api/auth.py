@@ -8,7 +8,12 @@ from pydantic import BaseModel
 
 from core.config import settings
 from core.security import TokenData, create_access_token, verify_token
-from core.database import get_user_by_username, hash_password, create_user
+from core.database import (
+    get_user_by_username,
+    hash_password,
+    verify_password,
+    create_user,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -21,19 +26,26 @@ class RegisterRequest(BaseModel):
 @router.post("/register")
 def register(req: RegisterRequest) -> dict[str, str]:
     if not req.username or not req.password:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username and password are required")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username and password are required",
+        )
     hashed = hash_password(req.password)
     success = create_user(req.username, hashed, role="learner")
     if not success:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Username already exists"
+        )
     return {"status": "ok", "message": "User registered successfully"}
 
 
 @router.post("/token")
 def login(form_data: OAuth2PasswordRequestForm = Depends()) -> dict[str, str]:
     user = get_user_by_username(form_data.username)
-    if not user or user["password_hash"] != hash_password(form_data.password):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    if not user or not verify_password(form_data.password, user["password_hash"]):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+        )
 
     access_token = create_access_token(
         data={"sub": user["username"], "role": user["role"]},
@@ -43,6 +55,7 @@ def login(form_data: OAuth2PasswordRequestForm = Depends()) -> dict[str, str]:
 
 
 @router.get("/me")
-def read_current_user(token_data: TokenData = Depends(verify_token)) -> dict[str, str | None]:
+def read_current_user(
+    token_data: TokenData = Depends(verify_token),
+) -> dict[str, str | None]:
     return {"username": token_data.username, "role": token_data.role}
-

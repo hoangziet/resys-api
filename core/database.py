@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import sqlite3
-import hashlib
 from pathlib import Path
 
+import bcrypt
+
 DB_PATH = Path("data/db.sqlite3")
+
 
 def get_connection() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -12,13 +14,21 @@ def get_connection() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     return conn
 
+
 def hash_password(password: str) -> str:
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return bcrypt.checkpw(
+        plain_password.encode("utf-8"), hashed_password.encode("utf-8")
+    )
+
 
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
-    
+
     # Create users table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
@@ -28,7 +38,7 @@ def init_db():
         role TEXT NOT NULL DEFAULT 'learner'
     );
     """)
-    
+
     # Create user_history table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS user_history (
@@ -38,7 +48,7 @@ def init_db():
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     """)
-    
+
     # Create recommendation_logs table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS recommendation_logs (
@@ -51,23 +61,24 @@ def init_db():
         results TEXT
     );
     """)
-    
+
     conn.commit()
-    
+
     # Seed default users if users table is empty
     cursor.execute("SELECT COUNT(*) as count FROM users")
     if cursor.fetchone()["count"] == 0:
         cursor.execute(
             "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
-            ("learner", hash_password("secret"), "learner")
+            ("learner", hash_password("secret"), "learner"),
         )
         cursor.execute(
             "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
-            ("admin", hash_password("adminsecret"), "admin")
+            ("admin", hash_password("adminsecret"), "admin"),
         )
         conn.commit()
-        
+
     conn.close()
+
 
 # Helper queries
 def get_user_by_username(username: str) -> dict | None:
@@ -80,13 +91,14 @@ def get_user_by_username(username: str) -> dict | None:
         return dict(row)
     return None
 
+
 def create_user(username: str, password_hash: str, role: str = "learner") -> bool:
     conn = get_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
             "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
-            (username, password_hash, role)
+            (username, password_hash, role),
         )
         conn.commit()
         return True
@@ -94,6 +106,7 @@ def create_user(username: str, password_hash: str, role: str = "learner") -> boo
         return False
     finally:
         conn.close()
+
 
 def get_user_history(username: str) -> list[int]:
     user = get_user_by_username(username)
@@ -106,6 +119,7 @@ def get_user_history(username: str) -> list[int]:
     conn.close()
     return [row["item_idx"] for row in rows]
 
+
 def add_history_item(username: str, item_idx: int) -> bool:
     user = get_user_by_username(username)
     if not user:
@@ -115,7 +129,7 @@ def add_history_item(username: str, item_idx: int) -> bool:
     try:
         cursor.execute(
             "INSERT OR IGNORE INTO user_history (user_id, item_idx) VALUES (?, ?)",
-            (user["id"], item_idx)
+            (user["id"], item_idx),
         )
         conn.commit()
         return True
@@ -123,6 +137,7 @@ def add_history_item(username: str, item_idx: int) -> bool:
         return False
     finally:
         conn.close()
+
 
 def remove_history_item(username: str, item_idx: int) -> bool:
     user = get_user_by_username(username)
@@ -133,7 +148,7 @@ def remove_history_item(username: str, item_idx: int) -> bool:
     try:
         cursor.execute(
             "DELETE FROM user_history WHERE user_id = ? AND item_idx = ?",
-            (user["id"], item_idx)
+            (user["id"], item_idx),
         )
         conn.commit()
         return True
@@ -141,6 +156,7 @@ def remove_history_item(username: str, item_idx: int) -> bool:
         return False
     finally:
         conn.close()
+
 
 def clear_user_history(username: str) -> bool:
     user = get_user_by_username(username)
@@ -157,7 +173,14 @@ def clear_user_history(username: str) -> bool:
     finally:
         conn.close()
 
-def log_recommendation(username: str | None, strategy: str, latency_ms: float, history: list[int], results: list[int]) -> bool:
+
+def log_recommendation(
+    username: str | None,
+    strategy: str,
+    latency_ms: float,
+    history: list[int],
+    results: list[int],
+) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
     try:
@@ -167,12 +190,12 @@ def log_recommendation(username: str | None, strategy: str, latency_ms: float, h
             VALUES (?, ?, ?, ?, ?)
             """,
             (
-                username, 
-                strategy, 
-                latency_ms, 
+                username,
+                strategy,
+                latency_ms,
                 ",".join(map(str, history)) if history else "",
-                ",".join(map(str, results)) if results else ""
-            )
+                ",".join(map(str, results)) if results else "",
+            ),
         )
         conn.commit()
         return True
@@ -181,10 +204,13 @@ def log_recommendation(username: str | None, strategy: str, latency_ms: float, h
     finally:
         conn.close()
 
+
 def get_recommendation_logs(limit: int = 100) -> list[dict]:
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT * FROM recommendation_logs ORDER BY timestamp DESC LIMIT ?", (limit,))
+    cursor.execute(
+        "SELECT * FROM recommendation_logs ORDER BY timestamp DESC LIMIT ?", (limit,)
+    )
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
