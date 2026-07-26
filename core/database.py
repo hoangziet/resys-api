@@ -57,25 +57,6 @@ def init_db():
     );
     """)
 
-    # Migration: add columns to existing user_history if missing
-    cursor.execute("PRAGMA table_info(user_history)")
-    existing_cols = {row["name"] for row in cursor.fetchall()}
-    if "added_at" not in existing_cols:
-        cursor.execute(
-            "ALTER TABLE user_history ADD COLUMN added_at DATETIME DEFAULT CURRENT_TIMESTAMP"
-        )
-    if "order_idx" not in existing_cols:
-        cursor.execute(
-            "ALTER TABLE user_history ADD COLUMN order_idx INTEGER NOT NULL DEFAULT 0"
-        )
-        # Backfill order_idx for existing rows based on rowid
-        cursor.execute("""
-            UPDATE user_history SET order_idx = (
-                SELECT COUNT(*) FROM user_history AS h2
-                WHERE h2.user_id = user_history.user_id AND h2.rowid <= user_history.rowid
-            ) - 1
-        """)
-
     # Create recommendation_logs table
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS recommendation_logs (
