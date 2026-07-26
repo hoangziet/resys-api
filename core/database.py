@@ -49,10 +49,31 @@ def init_db():
     CREATE TABLE IF NOT EXISTS user_history (
         user_id INTEGER NOT NULL,
         item_idx INTEGER NOT NULL,
+        order_idx INTEGER NOT NULL DEFAULT 0,
+        added_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (user_id, item_idx),
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     """)
+
+    # Migration: add columns to existing user_history if missing
+    cursor.execute("PRAGMA table_info(user_history)")
+    existing_cols = {row["name"] for row in cursor.fetchall()}
+    if "added_at" not in existing_cols:
+        cursor.execute(
+            "ALTER TABLE user_history ADD COLUMN added_at DATETIME DEFAULT CURRENT_TIMESTAMP"
+        )
+    if "order_idx" not in existing_cols:
+        cursor.execute(
+            "ALTER TABLE user_history ADD COLUMN order_idx INTEGER NOT NULL DEFAULT 0"
+        )
+        # Backfill order_idx for existing rows based on rowid
+        cursor.execute("""
+            UPDATE user_history SET order_idx = (
+                SELECT COUNT(*) FROM user_history AS h2
+                WHERE h2.user_id = user_history.user_id AND h2.rowid <= user_history.rowid
+            ) - 1
+        """)
 
     # Create recommendation_logs table
     cursor.execute("""
@@ -128,7 +149,10 @@ def get_user_history(username: str) -> list[int]:
         return []
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT item_idx FROM user_history WHERE user_id = ?", (user["id"],))
+    cursor.execute(
+        "SELECT item_idx FROM user_history WHERE user_id = ? ORDER BY order_idx ASC",
+        (user["id"],),
+    )
     rows = cursor.fetchall()
     conn.close()
     return [row["item_idx"] for row in rows]
@@ -142,8 +166,14 @@ def add_history_item(username: str, item_idx: int) -> bool:
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "INSERT OR IGNORE INTO user_history (user_id, item_idx) VALUES (?, ?)",
-            (user["id"], item_idx),
+            "SELECT COALESCE(MAX(order_idx), -1) + 1 FROM user_history WHERE user_id = ?",
+            (user["id"],),
+        )
+        next_order = cursor.fetchone()[0]
+        cursor.execute(
+            "INSERT OR IGNORE INTO user_history (user_id, item_idx, order_idx, added_at) "
+            "VALUES (?, ?, ?, CURRENT_TIMESTAMP)",
+            (user["id"], item_idx, next_order),
         )
         conn.commit()
         return True

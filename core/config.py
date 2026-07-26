@@ -15,6 +15,10 @@ _INSECURE_DEFAULTS = frozenset({"replace-with-secure-key", ""})
 log = logging.getLogger(__name__)
 
 
+def _parse_cors_origins(raw: str) -> list[str]:
+    return [o.strip() for o in raw.split(",") if o.strip()]
+
+
 def _generate_credentials() -> tuple[str, str, str, str]:
     admin_user = os.getenv("ADMIN_USERNAME", "admin")
     admin_pass = os.getenv("ADMIN_PASSWORD", "")
@@ -45,6 +49,11 @@ class Settings:
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     database_url: str = os.getenv(
         "DATABASE_URL", "postgresql://user:password@localhost:5432/mars"
+    )
+    cors_origins: list[str] = field(
+        default_factory=lambda: _parse_cors_origins(
+            os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000")
+        )
     )
     admin_username: str = ""
     admin_password: str = ""
