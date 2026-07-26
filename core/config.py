@@ -14,9 +14,24 @@ _INSECURE_DEFAULTS = frozenset({"replace-with-secure-key", ""})
 
 log = logging.getLogger(__name__)
 
+_MIN_PASSWORD_LENGTH = 8
+
 
 def _parse_cors_origins(raw: str) -> list[str]:
     return [o.strip() for o in raw.split(",") if o.strip()]
+
+
+def validate_password(password: str) -> str | None:
+    """Return error message if password is invalid, else None."""
+    if len(password) < _MIN_PASSWORD_LENGTH:
+        return f"Password must be at least {_MIN_PASSWORD_LENGTH} characters"
+    if not any(c.isupper() for c in password):
+        return "Password must contain at least one uppercase letter"
+    if not any(c.islower() for c in password):
+        return "Password must contain at least one lowercase letter"
+    if not any(c.isdigit() for c in password):
+        return "Password must contain at least one digit"
+    return None
 
 
 def _generate_credentials() -> tuple[str, str, str, str]:

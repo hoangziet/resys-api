@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
-from core.config import settings
+from core.config import settings, validate_password
 from core.rate_limit import limiter
 from core.security import TokenData, create_access_token, verify_token
 from core.database import (
@@ -32,6 +32,9 @@ def register(request: Request, req: RegisterRequest) -> dict[str, str]:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Username and password are required",
         )
+    pw_error = validate_password(req.password)
+    if pw_error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=pw_error)
     hashed = hash_password(req.password)
     success = create_user(req.username, hashed, role="learner")
     if not success:
