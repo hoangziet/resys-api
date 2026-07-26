@@ -94,6 +94,19 @@ def init_db():
             settings.admin_username,
         )
 
+    # Cleanup old recommendation logs on startup
+    cursor.execute(
+        "DELETE FROM recommendation_logs WHERE timestamp < datetime('now', ?)",
+        (f"-{settings.log_retention_days} days",),
+    )
+    if cursor.rowcount > 0:
+        conn.commit()
+        log.info(
+            "Cleaned up %d recommendation logs older than %d days",
+            cursor.rowcount,
+            settings.log_retention_days,
+        )
+
     conn.close()
 
 
@@ -240,3 +253,21 @@ def get_recommendation_logs(limit: int = 100) -> list[dict]:
     rows = cursor.fetchall()
     conn.close()
     return [dict(row) for row in rows]
+
+
+def cleanup_recommendation_logs(retention_days: int) -> int:
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "DELETE FROM recommendation_logs WHERE timestamp < datetime('now', ?)",
+            (f"-{retention_days} days",),
+        )
+        deleted = cursor.rowcount
+        conn.commit()
+        return deleted
+    except Exception:
+        conn.rollback()
+        return 0
+    finally:
+        conn.close()

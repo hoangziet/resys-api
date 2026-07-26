@@ -38,4 +38,7 @@ recommendation_logs = sa.Table(
     sa.Column("latency_ms", sa.Float, nullable=False),
     sa.Column("history", sa.Text, nullable=True),
     sa.Column("results", sa.Text, nullable=True),
+    sa.Index("ix_rec_logs_timestamp", "timestamp"),
+    sa.Index("ix_rec_logs_username", "username"),
+    sa.Index("ix_rec_logs_strategy", "strategy"),
 )

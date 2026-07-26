@@ -55,6 +55,7 @@ class Settings:
             os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000")
         )
     )
+    log_retention_days: int = int(os.getenv("LOG_RETENTION_DAYS", "30"))
     admin_username: str = ""
     admin_password: str = ""
     learner_username: str = ""
