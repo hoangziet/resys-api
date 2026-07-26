@@ -29,6 +29,11 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
 def create_app() -> FastAPI:
     database.init_db()
 
+    # Pre-load recommendation model at startup
+    from api.recommendations import load_recommendation_model
+
+    load_recommendation_model()
+
     app = FastAPI(title=settings.app_name)
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)

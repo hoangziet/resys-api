@@ -43,7 +43,7 @@ def load_model(
     if not ckpt_path.exists():
         raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
 
-    checkpoint = torch.load(ckpt_path, map_location="cpu")
+    checkpoint = torch.load(ckpt_path, map_location="cpu", weights_only=True)
     state_dict = checkpoint["state_dict"]
     params = _infer_params(state_dict)
 

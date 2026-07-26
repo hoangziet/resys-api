@@ -41,7 +41,7 @@ class TextItemEncoder(nn.Module):
         path = Path(path) if path is not None else LOCAL_TEXT_EMBEDDINGS_PATH
         if not path.exists():
             raise FileNotFoundError(f"Text embedding checkpoint not found: {path}")
-        text_embeddings = torch.load(path, map_location="cpu")
+        text_embeddings = torch.load(path, map_location="cpu", weights_only=True)
         return cls(text_embeddings=text_embeddings, hidden_dim=hidden_dim)
 
     def forward(self, item_ids: torch.Tensor) -> torch.Tensor:
@@ -50,10 +50,19 @@ class TextItemEncoder(nn.Module):
 
 
 class BERT4Rec(nn.Module):
-    def __init__(self, n_items, max_len=50, hidden_dim=64, num_heads=2,
-                 num_layers=2, dropout=0.2,
-                 watch_mode="none", watch_num_bins=5, watch_alpha=1.0,
-                 item_encoder=None):
+    def __init__(
+        self,
+        n_items,
+        max_len=50,
+        hidden_dim=64,
+        num_heads=2,
+        num_layers=2,
+        dropout=0.2,
+        watch_mode="none",
+        watch_num_bins=5,
+        watch_alpha=1.0,
+        item_encoder=None,
+    ):
         super().__init__()
         self.n_items = n_items
         self.hidden_dim = hidden_dim
@@ -69,7 +78,9 @@ class BERT4Rec(nn.Module):
         self.pos_embedding = nn.Embedding(max_len, hidden_dim)
 
         # watch embedding: pad(0) + mask(1) + num_bins engagement bins
-        self.watch_embedding = nn.Embedding(watch_num_bins + 2, hidden_dim, padding_idx=0)
+        self.watch_embedding = nn.Embedding(
+            watch_num_bins + 2, hidden_dim, padding_idx=0
+        )
 
         # mask token embedding for item_encoder path
         self.mask_embedding = nn.Embedding(1, hidden_dim)
@@ -88,7 +99,7 @@ class BERT4Rec(nn.Module):
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
         self.pred_ffn = nn.Linear(hidden_dim, hidden_dim)
-        self.pred_ln  = nn.LayerNorm(hidden_dim, eps=1e-12)
+        self.pred_ln = nn.LayerNorm(hidden_dim, eps=1e-12)
 
         self.out_bias = nn.Parameter(torch.zeros(n_items))
 
@@ -130,10 +141,10 @@ class BERT4Rec(nn.Module):
         if self.watch_mode in {"embedding", "both"} and watch_input_ids is not None:
             x = x + self.watch_embedding(watch_input_ids)
 
-        x = self.input_ln(x)   # LayerNorm before dropout (BERT convention)
+        x = self.input_ln(x)  # LayerNorm before dropout (BERT convention)
         x = self.dropout(x)
 
-        padding_mask = (input_seq == self.pad_token)
+        padding_mask = input_seq == self.pad_token
         x = self.transformer(x, src_key_padding_mask=padding_mask)
 
         # MLM prediction head: transform hidden states before weight-tied projection
@@ -146,8 +157,10 @@ class BERT4Rec(nn.Module):
         real_item_logits = F.linear(x, real_item_weight, self.out_bias)
 
         padding_logits = torch.zeros(
-            *real_item_logits.shape[:-1], 1,
-            dtype=real_item_logits.dtype, device=real_item_logits.device,
+            *real_item_logits.shape[:-1],
+            1,
+            dtype=real_item_logits.dtype,
+            device=real_item_logits.device,
         )
         return torch.nan_to_num(
             torch.cat([padding_logits, real_item_logits], dim=-1),
@@ -169,7 +182,9 @@ class BERT4Rec(nn.Module):
 
         real_item_logits = logits[..., 1:][valid_mask]
         zero_based_labels = valid_labels - 1
-        per_token = F.cross_entropy(real_item_logits, zero_based_labels, reduction="none")
+        per_token = F.cross_entropy(
+            real_item_logits, zero_based_labels, reduction="none"
+        )
 
         if self.watch_mode in {"loss", "both"} and engagement is not None:
             weights = 1.0 + self.watch_alpha * engagement[valid_mask].clamp(0.0, 1.0)

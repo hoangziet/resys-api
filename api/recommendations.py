@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+import math
+import threading
 import time
 from typing import List, Optional
 
@@ -13,6 +16,8 @@ from models.embeddings import item_embeddings
 from core.security import verify_token
 from core import database
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/recommendations", tags=["recommendations"])
 
 
@@ -25,15 +30,21 @@ class SimilarityRequest(BaseModel):
     limit: int = Field(default=10, ge=1, le=50)
 
 
-_better_model = None
+_model = None
+_model_lock = threading.Lock()
 
 
-def _load_recommendation_model():
-    global _better_model
-    if _better_model is None:
-        model, _, _ = load_model(settings.model_checkpoint_path)
-        _better_model = model
-    return _better_model
+def get_model():
+    return _model
+
+
+def load_recommendation_model():
+    global _model
+    with _model_lock:
+        if _model is None:
+            model, _, _ = load_model(settings.model_checkpoint_path)
+            _model = model
+            logger.info("Recommendation model loaded at startup")
 
 
 @router.post("/popular")
@@ -81,15 +92,15 @@ def for_you(
         }
 
     try:
-        model = _load_recommendation_model()
+        model = get_model()
+        if model is None:
+            raise RuntimeError("Model not loaded")
         top_items = predict(
             model,
             history,
             max_len=model.pos_embedding.num_embeddings,
             top_k=body.limit,
         )
-
-        import math
 
         logits = [score for _, score in top_items]
         max_logit = max(logits) if logits else 0.0

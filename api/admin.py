@@ -26,9 +26,15 @@ def model_health(user=Depends(require_admin)) -> dict:
     exists = os.path.exists(settings.model_checkpoint_path)
     if exists:
         try:
-            from api.recommendations import _load_recommendation_model
+            from api.recommendations import get_model
 
-            model = _load_recommendation_model()
+            model = get_model()
+            if model is None:
+                return {
+                    "status": "degraded",
+                    "artifact": "bert4rec.pt",
+                    "error": "Model not loaded",
+                }
             return {
                 "status": "healthy",
                 "artifact": "bert4rec.pt",

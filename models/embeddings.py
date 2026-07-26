@@ -37,9 +37,11 @@ class ItemEmbeddings:
             raise FileNotFoundError(
                 f"Text embedding checkpoint not found: {path} or {ALT_TEXT_EMBEDDINGS_PATH}"
             )
-        embeddings = torch.load(source_path, map_location="cpu")
+        embeddings = torch.load(source_path, map_location="cpu", weights_only=True)
         if embeddings.dim() != 2:
-            raise ValueError(f"Expected 2D tensor for embeddings, got {embeddings.dim()}D")
+            raise ValueError(
+                f"Expected 2D tensor for embeddings, got {embeddings.dim()}D"
+            )
         return embeddings
 
     def _load_metadata(self, path: Path) -> dict[int, dict[str, Any]]:
@@ -86,7 +88,9 @@ class ItemEmbeddings:
         item_idxs = self.sorted_item_idxs[:limit]
         return [self.serialize_item(item_idx) for item_idx in item_idxs]
 
-    def search_items(self, query: str | None = None, limit: int = 20) -> list[dict[str, Any]]:
+    def search_items(
+        self, query: str | None = None, limit: int = 20
+    ) -> list[dict[str, Any]]:
         if not query:
             return self.get_popular_items(limit=limit)
         query_text = query.strip().lower()
@@ -109,14 +113,19 @@ class ItemEmbeddings:
         if item_idx not in self.item_idx_set:
             raise KeyError(f"Unknown item_idx: {item_idx}")
         if item_idx >= self.embeddings.size(0):
-            raise IndexError(f"item_idx {item_idx} is out of range for embeddings shape {self.embeddings.shape}")
+            raise IndexError(
+                f"item_idx {item_idx} is out of range for embeddings shape {self.embeddings.shape}"
+            )
 
         query_vec = self.normalized_embeddings[item_idx].unsqueeze(0)
         scores = torch.matmul(query_vec, self.normalized_embeddings.T).squeeze(0)
         scores[item_idx] = float("-inf")
         top_k = min(top_k, scores.numel() - 1)
         values, indices = torch.topk(scores, top_k)
-        return [(int(idx.item()), float(value.item())) for idx, value in zip(indices, values)]
+        return [
+            (int(idx.item()), float(value.item()))
+            for idx, value in zip(indices, values)
+        ]
 
 
 item_embeddings = ItemEmbeddings()
