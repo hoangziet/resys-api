@@ -29,7 +29,9 @@ Device = str | torch.device
 
 
 def _resolve_device(device: Device | None = None) -> torch.device:
-    return torch.device("cuda" if device is None and torch.cuda.is_available() else device or "cpu")
+    return torch.device(
+        "cuda" if device is None and torch.cuda.is_available() else device or "cpu"
+    )
 
 
 def load_model(
@@ -88,19 +90,42 @@ def load_model(
 
 def _infer_params(state_dict: dict[str, Tensor]) -> dict[str, int]:
     emb_shape = state_dict["item_embedding.weight"].shape
+    hidden_dim = emb_shape[1]
     layer_indices = {
         int(key.split(".")[2])
         for key in state_dict
         if key.startswith("transformer.layers.") and ".self_attn." in key
     }
 
+    # Prefer num_heads from checkpoint metadata, else infer from hidden_dim
+    num_heads = _infer_num_heads(state_dict, hidden_dim)
+
     return {
         "n_items": emb_shape[0] - 2,
-        "hidden_dim": emb_shape[1],
+        "hidden_dim": hidden_dim,
         "max_len": state_dict["pos_embedding.weight"].shape[0],
         "num_layers": max(layer_indices) + 1 if layer_indices else 1,
-        "num_heads": 2,
+        "num_heads": num_heads,
     }
+
+
+def _infer_num_heads(state_dict: dict[str, Tensor], hidden_dim: int) -> int:
+    # Check checkpoint metadata first (stored during training)
+    if "_num_heads" in state_dict:
+        return int(state_dict["_num_heads"])
+
+    # Infer from in_proj_weight shape if available
+    for key, tensor in state_dict.items():
+        if "self_attn.in_proj_weight" in key and tensor.dim() == 2:
+            # in_proj_weight has shape (3 * hidden_dim, hidden_dim)
+            # The head dim must divide hidden_dim evenly
+            for candidate in (2, 4, 8, 1, 3, 6, 12):
+                if hidden_dim % candidate == 0:
+                    return candidate
+            break
+
+    # Default fallback
+    return 2
 
 
 @torch.no_grad()
