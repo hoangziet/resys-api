@@ -24,8 +24,10 @@ def get_history(token_data=Depends(verify_token)) -> dict:
 @router.post("/")
 def add_history_item(item_idx: int, token_data=Depends(verify_token)) -> dict:
     if item_idx not in item_embeddings.item_idx_set:
-        raise HTTPException(status_code=404, detail=f"Course with item_idx {item_idx} not found")
-    
+        raise HTTPException(
+            status_code=404, detail=f"Course with item_idx {item_idx} not found"
+        )
+
     success = database.add_history_item(token_data.username, item_idx)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to add item to history")
@@ -36,6 +38,15 @@ def add_history_item(item_idx: int, token_data=Depends(verify_token)) -> dict:
 def remove_history_item(item_idx: int, token_data=Depends(verify_token)) -> dict:
     success = database.remove_history_item(token_data.username, item_idx)
     if not success:
-        raise HTTPException(status_code=500, detail="Failed to remove item from history")
+        raise HTTPException(
+            status_code=500, detail="Failed to remove item from history"
+        )
     return {"user": token_data.username, "item_idx": item_idx, "status": "removed"}
 
+
+@router.delete("/")
+def clear_history(token_data=Depends(verify_token)) -> dict:
+    success = database.clear_user_history(token_data.username)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to clear history")
+    return {"user": token_data.username, "status": "cleared"}

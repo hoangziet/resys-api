@@ -96,10 +96,12 @@ function showToast(title, message, type = "success") {
   toast.innerHTML = `
     <i class="fa-solid ${icon} toast-icon"></i>
     <div class="toast-content">
-      <div class="toast-title">${title}</div>
-      <div class="toast-message">${message}</div>
+      <div class="toast-title"></div>
+      <div class="toast-message"></div>
     </div>
   `;
+  toast.querySelector(".toast-title").textContent = title;
+  toast.querySelector(".toast-message").textContent = message;
   
   toastContainer.appendChild(toast);
   
@@ -256,9 +258,10 @@ function setupEventListeners() {
     try {
       const data = await apiRequest("/auth/token", "POST", params);
       
-      // Decode JWT token payload to grab role (simple base64 decode for sub/role)
+      // Decode JWT token payload to grab role (base64url-safe decode)
       const payloadBase64 = data.access_token.split(".")[1];
-      const payload = JSON.parse(atob(payloadBase64));
+      const padded = payloadBase64.replace(/-/g, "+").replace(/_/g, "/");
+      const payload = JSON.parse(atob(padded));
       
       saveSession(data.access_token, payload.sub, payload.role || "learner");
       showToast("Success", `Welcome back, ${payload.sub}!`, "success");
@@ -286,7 +289,8 @@ function setupEventListeners() {
       const data = await apiRequest("/auth/token", "POST", params);
       
       const payloadBase64 = data.access_token.split(".")[1];
-      const payload = JSON.parse(atob(payloadBase64));
+      const padded = payloadBase64.replace(/-/g, "+").replace(/_/g, "/");
+      const payload = JSON.parse(atob(padded));
       saveSession(data.access_token, payload.sub, payload.role || "learner");
     } catch (err) {
       showToast("Registration Failed", err.message, "error");
@@ -371,10 +375,7 @@ function setupEventListeners() {
     
     toggleLoading(true);
     try {
-      // Delete items sequentially in loop
-      for (const item_idx of [...state.history]) {
-        await apiRequest(`/history/${item_idx}`, "DELETE");
-      }
+      await apiRequest("/history/", "DELETE");
       showToast("Success", "Learning history cleared", "info");
       await loadHistory();
       await loadRecommendations();
@@ -609,23 +610,23 @@ function renderCourseCards(items, source) {
     return `
       <div class="card" onclick="openCourseDetail(${item.item_idx})">
         <div class="card-img-wrapper">
-          <img src="${item.thumbnail_url}" alt="${item.title}" />
-          ${scoreText ? `<div class="card-score-badge">${scoreText}</div>` : ""}
+          <img src="${escapeHtml(item.thumbnail_url)}" alt="${escapeHtml(item.title)}" />
+          ${scoreText ? `<div class="card-score-badge">${escapeHtml(scoreText)}</div>` : ""}
         </div>
         <div class="card-body">
           <div class="card-meta-row">
-            <span class="badge ${item.language === "fr" ? "badge-blue" : "badge-indigo"}">${item.language || "fr"}</span>
-            <span class="badge badge-light-blue">${item.type || "Course"}</span>
+            <span class="badge ${item.language === "fr" ? "badge-blue" : "badge-indigo"}">${escapeHtml(item.language || "fr")}</span>
+            <span class="badge badge-light-blue">${escapeHtml(item.type || "Course")}</span>
           </div>
-          <h4 class="card-title" title="${item.title}">${item.title}</h4>
-          <p class="card-desc">${cleanHtmlDescription(item.description)}</p>
+          <h4 class="card-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</h4>
+          <p class="card-desc">${escapeHtml(item.description)}</p>
         </div>
         <div class="card-footer">
           <div class="card-footer-tags">
-            <span class="badge badge-light-blue">${item.theme || "Tech"}</span>
+            <span class="badge badge-light-blue">${escapeHtml(item.theme || "Tech")}</span>
           </div>
           <div class="card-duration">
-            <i class="fa-regular fa-clock"></i> ${formattedDuration}
+            <i class="fa-regular fa-clock"></i> ${escapeHtml(formattedDuration)}
           </div>
         </div>
       </div>
@@ -634,22 +635,20 @@ function renderCourseCards(items, source) {
 }
 
 // --- Parse Helpers ---
+function escapeHtml(str) {
+  if (str == null) return "";
+  const div = document.createElement("div");
+  div.appendChild(document.createTextNode(String(str)));
+  return div.innerHTML;
+}
+
 function formatDuration(sec) {
-  if (!sec) return "—";
+  if (!sec) return "\u2014";
   const mins = Math.round(sec / 60);
   if (mins < 60) return `${mins}m`;
   const hrs = Math.floor(mins / 60);
   const remMins = mins % 60;
   return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`;
-}
-
-function cleanHtmlDescription(desc) {
-  if (!desc) return "No description available.";
-  // Strip simple html tags
-  let text = desc.replace(/<\/?[^>]+(>|$)/g, "");
-  // Unescape HTML entities
-  text = text.replace(/&#039;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-  return text;
 }
 
 // --- Search Engine ---
@@ -719,8 +718,8 @@ async function renderHistoryTimeline() {
         <div class="timeline-content-wrapper">
           <div class="timeline-idx-circle">${index + 1}</div>
           <div class="timeline-info" onclick="openCourseDetail(${item.item_idx})">
-            <h4>${item.title}</h4>
-            <p>${item.type || "Course"} • ${item.language || "fr"} • ${formatDuration(item.duration)}</p>
+            <h4>${escapeHtml(item.title)}</h4>
+            <p>${escapeHtml(item.type || "Course")} • ${escapeHtml(item.language || "fr")} • ${escapeHtml(formatDuration(item.duration))}</p>
           </div>
         </div>
         <button class="btn-remove-timeline" onclick="deleteHistoryItem(${item.item_idx})" title="Remove from sequence">
@@ -768,14 +767,14 @@ window.openCourseDetail = async function(item_idx) {
     // Set text contents
     drawerTitle.textContent = course.title;
     drawerMeta.textContent = `${course.language || "fr"} • ${course.type || "Course"} • ${formatDuration(course.duration)}`;
-    drawerDesc.innerHTML = course.description || "<p>No description available.</p>";
+    drawerDesc.textContent = course.description || "No description available.";
     
     // Set tags
     let tagsHtml = "";
-    if (course.difficulty) tagsHtml += `<span class="badge badge-indigo">${course.difficulty}</span>`;
-    if (course.theme) tagsHtml += `<span class="badge badge-blue">${course.theme}</span>`;
-    if (course.software) tagsHtml += `<span class="badge badge-orange">${course.software}</span>`;
-    if (course.job) tagsHtml += `<span class="badge badge-green">${course.job}</span>`;
+    if (course.difficulty) tagsHtml += `<span class="badge badge-indigo">${escapeHtml(course.difficulty)}</span>`;
+    if (course.theme) tagsHtml += `<span class="badge badge-blue">${escapeHtml(course.theme)}</span>`;
+    if (course.software) tagsHtml += `<span class="badge badge-orange">${escapeHtml(course.software)}</span>`;
+    if (course.job) tagsHtml += `<span class="badge badge-green">${escapeHtml(course.job)}</span>`;
     drawerTags.innerHTML = tagsHtml;
     
     // Set poster image & reset video
@@ -819,8 +818,8 @@ function renderSimilarItems(items) {
   drawerSimilar.innerHTML = items.map(item => `
     <div class="similar-item-card" onclick="openCourseDetail(${item.item_idx})">
       <div class="similar-item-info">
-        <h5 title="${item.title}">${item.title}</h5>
-        <p>${item.type || "Course"} • ${formatDuration(item.duration)}</p>
+        <h5 title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</h5>
+        <p>${escapeHtml(item.type || "Course")} • ${escapeHtml(formatDuration(item.duration))}</p>
       </div>
       <span class="similar-score">${Math.round(item.score * 100)}% Match</span>
     </div>
@@ -871,12 +870,12 @@ async function loadAdminLogs() {
     const date = new Date(log.timestamp + "Z").toLocaleTimeString();
     return `
       <tr>
-        <td title="${log.timestamp}">${date}</td>
-        <td><code>${log.username || "anonymous"}</code></td>
-        <td><span class="badge ${getStrategyBadge(log.strategy)}">${log.strategy}</span></td>
+        <td title="${escapeHtml(log.timestamp)}">${escapeHtml(date)}</td>
+        <td><code>${escapeHtml(log.username || "anonymous")}</code></td>
+        <td><span class="badge ${getStrategyBadge(log.strategy)}">${escapeHtml(log.strategy)}</span></td>
         <td><strong>${Math.round(log.latency_ms)} ms</strong></td>
-        <td title="${log.history}"><code>${log.history || "empty"}</code></td>
-        <td title="${log.results}"><code>${log.results || "empty"}</code></td>
+        <td title="${escapeHtml(log.history)}"><code>${escapeHtml(log.history || "empty")}</code></td>
+        <td title="${escapeHtml(log.results)}"><code>${escapeHtml(log.results || "empty")}</code></td>
       </tr>
     `;
   }).join("");
@@ -912,7 +911,7 @@ function renderLatencyChart() {
     const tooltip = `${log.strategy}\nLatency: ${log.latency_ms.toFixed(1)}ms\nTime: ${timeLabel}`;
     
     return `
-      <div class="latency-bar ${strategyClass}" style="height: ${height}%;" data-tooltip="${tooltip}"></div>
+      <div class="latency-bar ${strategyClass}" style="height: ${height}%;" title="${escapeHtml(tooltip)}"></div>
     `;
   }).join("");
 }
