@@ -77,13 +77,15 @@ class BERT4Rec(nn.Module):
         self.item_embedding = nn.Embedding(self.vocab_size, hidden_dim, padding_idx=0)
         self.pos_embedding = nn.Embedding(max_len, hidden_dim)
 
-        # watch embedding: pad(0) + mask(1) + num_bins engagement bins
-        self.watch_embedding = nn.Embedding(
-            watch_num_bins + 2, hidden_dim, padding_idx=0
-        )
+        self.watch_embedding = None
+        if watch_mode in {"embedding", "both"}:
+            self.watch_embedding = nn.Embedding(
+                watch_num_bins + 2, hidden_dim, padding_idx=0
+            )
 
-        # mask token embedding for item_encoder path
-        self.mask_embedding = nn.Embedding(1, hidden_dim)
+        self.mask_embedding = None
+        if item_encoder is not None:
+            self.mask_embedding = nn.Embedding(1, hidden_dim)
 
         self.input_ln = nn.LayerNorm(hidden_dim, eps=1e-12)
         self.dropout = nn.Dropout(dropout)
@@ -114,20 +116,24 @@ class BERT4Rec(nn.Module):
         nn.init.zeros_(self.input_ln.bias)
         nn.init.ones_(self.pred_ln.weight)
         nn.init.zeros_(self.pred_ln.bias)
-        nn.init.normal_(self.watch_embedding.weight, std=0.02)
-        nn.init.normal_(self.mask_embedding.weight, std=0.02)
+        if self.watch_embedding is not None:
+            nn.init.normal_(self.watch_embedding.weight, std=0.02)
+        if self.mask_embedding is not None:
+            nn.init.normal_(self.mask_embedding.weight, std=0.02)
         with torch.no_grad():
             self.item_embedding.weight[0].zero_()
-            self.watch_embedding.weight[0].zero_()
+            if self.watch_embedding is not None:
+                self.watch_embedding.weight[0].zero_()
 
     def _item_input_embedding(self, input_seq: torch.Tensor) -> torch.Tensor:
         if self.item_encoder is None:
             return self.item_embedding(input_seq)
         real_ids = input_seq.clamp(max=self.n_items)
         encoded = self.item_encoder(real_ids)
-        mask_token_mask = (input_seq == self.mask_token).unsqueeze(-1)
-        mask_emb = self.mask_embedding.weight[0].view(1, 1, -1)
-        encoded = torch.where(mask_token_mask, mask_emb, encoded)
+        if self.mask_embedding is not None:
+            mask_token_mask = (input_seq == self.mask_token).unsqueeze(-1)
+            mask_emb = self.mask_embedding.weight[0].view(1, 1, -1)
+            encoded = torch.where(mask_token_mask, mask_emb, encoded)
         return encoded
 
     def forward(self, input_seq, watch_input_ids=None):
@@ -138,7 +144,7 @@ class BERT4Rec(nn.Module):
         # ponytail: watch embeddings are a training-time augmentation only.
         # At inference (watch_input_ids=None), the model runs on base item+position
         # representations, analogous to how dropout is disabled at eval time.
-        if self.watch_mode in {"embedding", "both"} and watch_input_ids is not None:
+        if self.watch_embedding is not None and watch_input_ids is not None:
             x = x + self.watch_embedding(watch_input_ids)
 
         x = self.input_ln(x)  # LayerNorm before dropout (BERT convention)
