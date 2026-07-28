@@ -88,11 +88,11 @@ document.addEventListener("DOMContentLoaded", () => {
 function showToast(title, message, type = "success") {
   const toast = document.createElement("div");
   toast.className = `toast ${type}`;
-  
+
   let icon = "fa-circle-check";
   if (type === "error") icon = "fa-circle-xmark";
   if (type === "info") icon = "fa-circle-info";
-  
+
   toast.innerHTML = `
     <i class="fa-solid ${icon} toast-icon"></i>
     <div class="toast-content">
@@ -102,9 +102,9 @@ function showToast(title, message, type = "success") {
   `;
   toast.querySelector(".toast-title").textContent = title;
   toast.querySelector(".toast-message").textContent = message;
-  
+
   toastContainer.appendChild(toast);
-  
+
   // Auto remove toast
   setTimeout(() => {
     toast.style.transform = "translateY(-20px)";
@@ -125,13 +125,13 @@ function toggleLoading(show) {
 // --- API Request Wrapper ---
 async function apiRequest(endpoint, method = "GET", body = null) {
   const headers = {};
-  
+
   if (state.token) {
     headers["Authorization"] = `Bearer ${state.token}`;
   }
-  
+
   const options = { method, headers };
-  
+
   if (body) {
     if (body instanceof URLSearchParams) {
       headers["Content-Type"] = "application/x-www-form-urlencoded";
@@ -141,23 +141,23 @@ async function apiRequest(endpoint, method = "GET", body = null) {
       options.body = JSON.stringify(body);
     }
   }
-  
+
   try {
     const response = await fetch(`${API_PREFIX}${endpoint}`, options);
-    
+
     if (response.status === 401) {
       // Auto logout on token expired
       logout();
       showToast("Session Expired", "Please log in again.", "error");
       throw new Error("Unauthorized");
     }
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       const message = errorData.detail?.message || errorData.detail || "API Request failed";
       throw new Error(message);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error(`API Error (${endpoint}):`, error);
@@ -170,11 +170,11 @@ function checkAuth() {
   if (state.token) {
     authScreen.classList.add("hidden");
     dashboardScreen.classList.remove("hidden");
-    
+
     userDisplayName.textContent = state.username;
     userRoleBadge.textContent = state.role;
     userRoleBadge.className = `badge ${state.role === "admin" ? "badge-orange" : "badge-indigo"}`;
-    
+
     // Show admin options if role is admin
     const adminItems = document.querySelectorAll(".admin-only");
     adminItems.forEach(item => {
@@ -184,7 +184,7 @@ function checkAuth() {
         item.classList.add("hidden");
       }
     });
-    
+
     // Reset view to dashboard tab
     switchTab("dashboard");
     refreshDashboard();
@@ -212,7 +212,7 @@ function logout() {
   localStorage.removeItem("username");
   localStorage.removeItem("user_role");
   checkAuth();
-  
+
   // Pause any playing video
   drawerVideo.pause();
   detailDrawer.classList.add("hidden");
@@ -250,19 +250,19 @@ function setupEventListeners() {
     toggleLoading(true);
     const username = document.getElementById("login-username").value.trim();
     const password = document.getElementById("login-password").value;
-    
+
     const params = new URLSearchParams();
     params.append("username", username);
     params.append("password", password);
-    
+
     try {
       const data = await apiRequest("/auth/token", "POST", params);
-      
+
       // Decode JWT token payload to grab role (base64url-safe decode)
       const payloadBase64 = data.access_token.split(".")[1];
       const padded = payloadBase64.replace(/-/g, "+").replace(/_/g, "/");
       const payload = JSON.parse(atob(padded));
-      
+
       saveSession(data.access_token, payload.sub, payload.role || "learner");
       showToast("Success", `Welcome back, ${payload.sub}!`, "success");
     } catch (err) {
@@ -277,17 +277,17 @@ function setupEventListeners() {
     toggleLoading(true);
     const username = document.getElementById("register-username").value.trim();
     const password = document.getElementById("register-password").value;
-    
+
     try {
       await apiRequest("/auth/register", "POST", { username, password });
       showToast("Success", "Account created! Logging in...", "success");
-      
+
       // Auto Login
       const params = new URLSearchParams();
       params.append("username", username);
       params.append("password", password);
       const data = await apiRequest("/auth/token", "POST", params);
-      
+
       const payloadBase64 = data.access_token.split(".")[1];
       const padded = payloadBase64.replace(/-/g, "+").replace(/_/g, "/");
       const payload = JSON.parse(atob(padded));
@@ -317,7 +317,7 @@ function setupEventListeners() {
     } else {
       searchClearBtn.classList.add("hidden");
     }
-    
+
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
       runSearch();
@@ -341,7 +341,7 @@ function setupEventListeners() {
     if (!state.openCourse) return;
     const isLearned = state.history.some(idx => idx === state.openCourse.item_idx);
     toggleLoading(true);
-    
+
     try {
       if (isLearned) {
         // Remove from history
@@ -352,13 +352,13 @@ function setupEventListeners() {
         await apiRequest(`/history/?item_idx=${state.openCourse.item_idx}`, "POST");
         showToast("Learned", "Course marked as learned!", "success");
       }
-      
+
       // Refresh history state
       await loadHistory();
-      
+
       // Update toggle button UI
       updateDrawerToggleButton();
-      
+
       // Refresh home recommendations
       await loadRecommendations();
     } catch (err) {
@@ -372,7 +372,7 @@ function setupEventListeners() {
   clearHistoryBtn.addEventListener("click", async () => {
     if (state.history.length === 0) return;
     if (!confirm("Are you sure you want to clear your learning history? This will reset all personalization rails.")) return;
-    
+
     toggleLoading(true);
     try {
       await apiRequest("/history/", "DELETE");
@@ -428,7 +428,7 @@ function setupEventListeners() {
 // --- Tab Switching Navigation ---
 function switchTab(tabId) {
   state.currentTab = tabId;
-  
+
   // Set navbar active class
   navItems.forEach(item => {
     if (item.getAttribute("data-tab") === tabId) {
@@ -599,14 +599,14 @@ function renderCourseCards(items, source) {
   if (!items || items.length === 0) {
     return `<div class="empty-rail-msg">No recommendations available. Update your history to trigger predictions.</div>`;
   }
-  
+
   return items.map(item => {
     const formattedDuration = formatDuration(item.duration);
     const isBert = source === "bert4rec_personalized" || source === "bert4rec";
     const scoreText = (item.score !== undefined && !isBert) ? `${Math.round(item.score * 100)}% Match` : "";
 
 
-    
+
     return `
       <div class="card" onclick="openCourseDetail(${item.item_idx})">
         <div class="card-img-wrapper">
@@ -655,7 +655,7 @@ function formatDuration(sec) {
 async function runSearch() {
   searchResultsGrid.innerHTML = renderSkeletons(8);
   const q = searchInput.value.trim();
-  
+
   try {
     const res = await apiRequest(`/courses/?q=${encodeURIComponent(q)}`, "GET");
     let courses = res.data;
@@ -664,7 +664,7 @@ async function runSearch() {
     const difficultyVal = filterDifficulty.value;
     const languageVal = filterLanguage.value;
     const typeVal = filterType.value;
-    
+
     if (difficultyVal) {
       courses = courses.filter(c => c.difficulty && c.difficulty.toLowerCase().includes(difficultyVal.toLowerCase()));
     }
@@ -711,7 +711,7 @@ async function renderHistoryTimeline() {
 
     historyEmptyState.classList.add("hidden");
     clearHistoryBtn.classList.remove("hidden");
-    
+
     historyTimeline.innerHTML = history.map((item, index) => `
       <div class="timeline-item">
         <div class="timeline-node"></div>
@@ -736,7 +736,7 @@ async function renderHistoryTimeline() {
 }
 
 // Global functions for inline onclick handlers
-window.deleteHistoryItem = async function(item_idx) {
+window.deleteHistoryItem = async function (item_idx) {
   event.stopPropagation();
   toggleLoading(true);
   try {
@@ -756,19 +756,19 @@ window.deleteHistoryItem = async function(item_idx) {
 };
 
 // --- Course Details Drawer ---
-window.openCourseDetail = async function(item_idx) {
+window.openCourseDetail = async function (item_idx) {
   toggleLoading(true);
   drawerVideo.pause();
-  
+
   try {
     const course = await apiRequest(`/courses/${item_idx}`, "GET");
     state.openCourse = course;
-    
+
     // Set text contents
     drawerTitle.textContent = course.title;
     drawerMeta.textContent = `${course.language || "fr"} • ${course.type || "Course"} • ${formatDuration(course.duration)}`;
     drawerDesc.textContent = course.description || "No description available.";
-    
+
     // Set tags
     let tagsHtml = "";
     if (course.difficulty) tagsHtml += `<span class="badge badge-indigo">${escapeHtml(course.difficulty)}</span>`;
@@ -776,21 +776,21 @@ window.openCourseDetail = async function(item_idx) {
     if (course.software) tagsHtml += `<span class="badge badge-orange">${escapeHtml(course.software)}</span>`;
     if (course.job) tagsHtml += `<span class="badge badge-green">${escapeHtml(course.job)}</span>`;
     drawerTags.innerHTML = tagsHtml;
-    
+
     // Set poster image & reset video
     drawerVideo.poster = course.thumbnail_url || "/assets/thumbnail.png";
     drawerVideo.load();
-    
+
     // Update learn button toggle
     updateDrawerToggleButton();
-    
+
     // Load Similar Courses
     drawerSimilar.innerHTML = `<div class="spinner" style="width: 24px; height: 24px; border-width: 2px; margin: 20px auto;"></div>`;
     detailDrawer.classList.remove("hidden");
-    
+
     const similarRes = await apiRequest(`/recommendations/similar/${course.item_idx}`, "POST", { limit: 4 });
     renderSimilarItems(similarRes.items);
-    
+
   } catch (err) {
     showToast("Error", "Could not load course details: " + err.message, "error");
   } finally {
@@ -814,7 +814,7 @@ function renderSimilarItems(items) {
     drawerSimilar.innerHTML = "<p style='font-size: 0.8rem; color: var(--text-muted);'>No similar courses found.</p>";
     return;
   }
-  
+
   drawerSimilar.innerHTML = items.map(item => `
     <div class="similar-item-card" onclick="openCourseDetail(${item.item_idx})">
       <div class="similar-item-info">
@@ -831,7 +831,7 @@ async function loadAdminDashboard() {
   toggleLoading(true);
   try {
     const health = await apiRequest("/admin/model-health", "GET");
-    
+
     if (health.status === "healthy") {
       adminModelStatus.textContent = "Healthy & Active";
       adminModelStatus.className = "badge badge-green";
@@ -846,7 +846,7 @@ async function loadAdminDashboard() {
       adminModelStatus.textContent = "Unavailable";
       adminModelStatus.className = "badge badge-rose";
     }
-    
+
     await loadAdminLogs();
   } catch (err) {
     showToast("Admin access error", err.message, "error");
@@ -858,14 +858,14 @@ async function loadAdminDashboard() {
 async function loadAdminLogs() {
   const res = await apiRequest("/admin/recommendation-logs", "GET");
   state.logs = res.logs;
-  
+
   // Render table rows
   if (!state.logs || state.logs.length === 0) {
     logsTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No logs recorded. Query recommendations to trigger audits.</td></tr>`;
     latencyBars.innerHTML = `<div class="chart-placeholder">No logs recorded yet. Query the model to track latencies!</div>`;
     return;
   }
-  
+
   logsTbody.innerHTML = state.logs.map(log => {
     const date = new Date(log.timestamp + "Z").toLocaleTimeString();
     return `
@@ -895,21 +895,21 @@ function getStrategyBadge(strategy) {
 function renderLatencyChart() {
   // Grab the last 12 log queries and display them
   const recentLogs = [...state.logs].slice(0, 12).reverse();
-  
+
   if (recentLogs.length === 0) return;
-  
+
   latencyBars.innerHTML = recentLogs.map(log => {
     // Max visual height is 150px representing 50ms latency
     const maxVal = 50.0;
     const height = Math.min((log.latency_ms / maxVal) * 100, 100); // percentage height
-    
+
     let strategyClass = "pop";
     if (log.strategy === "bert4rec_personalized") strategyClass = "b4r";
     if (log.strategy === "vector_similarity") strategyClass = "sim";
-    
+
     const timeLabel = new Date(log.timestamp + "Z").toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const tooltip = `${log.strategy}\nLatency: ${log.latency_ms.toFixed(1)}ms\nTime: ${timeLabel}`;
-    
+
     return `
       <div class="latency-bar ${strategyClass}" style="height: ${height}%;" title="${escapeHtml(tooltip)}"></div>
     `;
