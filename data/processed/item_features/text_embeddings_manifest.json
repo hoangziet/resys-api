@@ -1,0 +1,14 @@
+{
+  "n_items": 1989,
+  "embedding_dim": 768,
+  "padding_row": 0,
+  "item_id_map_sha256": "938887e6bcac7ffbcf0818701afa3e0406caeede624699a17f94b388ef6c5244",
+  "metadata_sha256": "9d086b84854fb2e01031641597e08a81f3ee27c87526519d249dd2b315eaec14",
+  "encoder": "dangvantuan/sentence-camembert-base",
+  "encoder_revision": "103d895e85f97c1265c62efa238d092ecbb0d617",
+  "text_template_version": "v1",
+  "shape": [
+    1990,
+    768
+  ]
+}

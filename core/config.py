@@ -61,10 +61,7 @@ class Settings:
     access_token_expire_minutes: int = int(
         os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
     )
-    redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    database_url: str = os.getenv(
-        "DATABASE_URL", "postgresql://user:password@localhost:5432/mars"
-    )
+    sqlite_path: Path = Path(os.getenv("SQLITE_PATH", "data/db.sqlite3"))
     cors_origins: list[str] = field(
         default_factory=lambda: _parse_cors_origins(
             os.getenv("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000")
@@ -111,20 +108,14 @@ class Settings:
             self.learner_username = learner_user
 
             if not admin_pass:
-                self.admin_password = secrets.token_urlsafe(16)
-                log.warning(
-                    "ADMIN_PASSWORD not set — generated random: %s",
-                    self.admin_password,
-                )
+                self.admin_password = "Admin123"
+                log.warning("ADMIN_PASSWORD not set; using development demo password")
             else:
                 self.admin_password = admin_pass
 
             if not learner_pass:
-                self.learner_password = secrets.token_urlsafe(16)
-                log.warning(
-                    "LEARNER_PASSWORD not set — generated random: %s",
-                    self.learner_password,
-                )
+                self.learner_password = "Learner123"
+                log.warning("LEARNER_PASSWORD not set; using development demo password")
             else:
                 self.learner_password = learner_pass
 

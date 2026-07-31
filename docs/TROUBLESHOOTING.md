@@ -84,7 +84,7 @@ WARNING: CUDA not available, using CPU
 python -c "import torch; print(torch.cuda.is_available())"
 
 # Nếu False, cài PyTorch CUDA version
-pip install torch==2.6.0+cu124 --index-url https://download.pytorch.org/whl/cu124
+pip install torch==2.6.0+cpu --index-url https://download.pytorch.org/whl/cpu
 
 # Hoặc chấp nhận CPU (chậm hơn ~10x)
 # Server sẽ tự động fallback sang CPU

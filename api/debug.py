@@ -24,4 +24,4 @@ def debug_infer(token_data: TokenData = Depends(require_admin)):
         results = predict(model, history, max_len=max_len, top_k=10)
         return {"history": history, "results": results}
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Model load failed: {exc}")
+        raise HTTPException(status_code=500, detail=f"Model load failed: {exc}") from exc

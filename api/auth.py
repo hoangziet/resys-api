@@ -7,14 +7,14 @@ from fastapi.security import OAuth2PasswordRequestForm
 from pydantic import BaseModel
 
 from core.config import settings, validate_password
-from core.rate_limit import limiter
-from core.security import TokenData, create_access_token, verify_token
 from core.database import (
+    create_user,
     get_user_by_username,
     hash_password,
     verify_password,
-    create_user,
 )
+from core.rate_limit import limiter
+from core.security import TokenData, create_access_token, verify_token
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

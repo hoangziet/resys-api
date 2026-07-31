@@ -34,8 +34,8 @@ docker build -t mars-recommender .
 ```bash
 docker run -p 8000:8000 \
   -e JWT_SECRET_KEY=$(python -c "import secrets; print(secrets.token_urlsafe(48))") \
-  -e ADMIN_PASSWORD=Admin123 \
-  -e LEARNER_PASSWORD=Learner123 \
+  -e ADMIN_PASSWORD=<strong-admin-password> \
+  -e LEARNER_PASSWORD=<strong-learner-password> \
   -v $(pwd)/data:/app/data \
   mars-recommender
 ```

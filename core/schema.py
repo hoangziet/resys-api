@@ -7,7 +7,7 @@ metadata = sa.MetaData()
 users = sa.Table(
     "users",
     metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True, nullable=True),
     sa.Column("username", sa.Text, unique=True, nullable=False),
     sa.Column("password_hash", sa.Text, nullable=False),
     sa.Column("role", sa.Text, nullable=False, server_default="learner"),
@@ -31,11 +31,11 @@ user_history = sa.Table(
 recommendation_logs = sa.Table(
     "recommendation_logs",
     metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True, nullable=True),
     sa.Column("timestamp", sa.DateTime, server_default=sa.func.current_timestamp()),
     sa.Column("username", sa.Text, nullable=True),
     sa.Column("strategy", sa.Text, nullable=False),
-    sa.Column("latency_ms", sa.Float, nullable=False),
+    sa.Column("latency_ms", sa.REAL, nullable=False),
     sa.Column("history", sa.Text, nullable=True),
     sa.Column("results", sa.Text, nullable=True),
     sa.Index("ix_rec_logs_timestamp", "timestamp"),

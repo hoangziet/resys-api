@@ -124,7 +124,7 @@ class ItemEmbeddings:
         values, indices = torch.topk(scores, top_k)
         return [
             (int(idx.item()), float(value.item()))
-            for idx, value in zip(indices, values)
+            for idx, value in zip(indices, values, strict=True)
         ]
 
 

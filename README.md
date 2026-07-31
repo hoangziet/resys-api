@@ -27,17 +27,22 @@ This project is managed with the `uv` CLI (configured via `pyproject.toml`).
    pip install uv
    ```
 
-2. **Sync dependencies and initialize virtual environment**:
+2. **Copy local environment defaults**:
+   ```bash
+   cp .env.example .env
+   ```
+
+3. **Sync dependencies and initialize virtual environment**:
    ```bash
    uv sync
    ```
 
-3. **Start the API server**:
+4. **Start the API server**:
    ```bash
    uv run python -m uvicorn app:app --port 8000 --reload
    ```
 
-4. **Access the application**:
+5. **Access the application**:
    Open [http://127.0.0.1:8000/](http://127.0.0.1:8000/) in your browser.
 
 ---
@@ -48,6 +53,8 @@ The application is pre-configured with a persistent SQLite storage volume.
 
 1. **Start the docker container**:
    ```bash
+   cp .env.example .env
+   # Fill JWT_SECRET_KEY, ADMIN_PASSWORD, and LEARNER_PASSWORD before production use.
    docker compose up --build
    ```
 
@@ -61,3 +68,4 @@ The application is pre-configured with a persistent SQLite storage volume.
 For deep dives on model configuration, SQL CLI audits, and future code extensions, refer to the files in the `context/` folder:
 - [vibecoding_playbook.md](file:///home/michael/Documents/workspace/thesis/resys-api/context/vibecoding_playbook.md) - Site maps, sqlite3 tables, and test guidelines.
 - [architecture.md](file:///home/michael/Documents/workspace/thesis/resys-api/context/architecture.md) - Detailed PyTorch model layers and fallback workflows.
+- [CI/CD guide](docs/CICD_GUIDE.md) - GitHub Actions and VPS deployment.

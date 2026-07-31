@@ -4,7 +4,6 @@ import contextlib
 import logging
 import sqlite3
 from collections.abc import Generator
-from pathlib import Path
 
 import bcrypt
 
@@ -12,7 +11,7 @@ from core.config import settings
 
 log = logging.getLogger(__name__)
 
-DB_PATH = Path("data/db.sqlite3")
+DB_PATH = settings.sqlite_path
 
 Conn = sqlite3.Connection
 
@@ -39,9 +38,21 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return bcrypt.checkpw(
-        plain_password.encode("utf-8"), hashed_password.encode("utf-8")
-    )
+    try:
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"), hashed_password.encode("utf-8")
+        )
+    except ValueError:
+        log.warning("Stored password hash is not a valid bcrypt hash")
+        return False
+
+
+def _has_valid_bcrypt_hash(hashed_password: str) -> bool:
+    try:
+        bcrypt.checkpw(b"health-check", hashed_password.encode("utf-8"))
+        return True
+    except ValueError:
+        return False
 
 
 def _get_user_id(cursor: sqlite3.Cursor, username: str) -> int | None:
@@ -85,29 +96,34 @@ def init_db():
         results TEXT
     );
     """)
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS ix_rec_logs_timestamp ON recommendation_logs (timestamp)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS ix_rec_logs_username ON recommendation_logs (username)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS ix_rec_logs_strategy ON recommendation_logs (strategy)"
+    )
 
     conn.commit()
 
-    cursor.execute("SELECT COUNT(*) as count FROM users")
-    if cursor.fetchone()["count"] == 0:
-        cursor.execute(
-            "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
-            (
-                settings.learner_username,
-                hash_password(settings.learner_password),
-                "learner",
-            ),
-        )
-        cursor.execute(
-            "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
-            (settings.admin_username, hash_password(settings.admin_password), "admin"),
-        )
-        conn.commit()
-        log.info(
-            "Seeded database with users: %s (learner), %s (admin)",
-            settings.learner_username,
-            settings.admin_username,
-        )
+    _ensure_sqlite_columns(cursor)
+    conn.commit()
+
+    _ensure_seed_user(
+        cursor,
+        username=settings.learner_username,
+        password=settings.learner_password,
+        role="learner",
+    )
+    _ensure_seed_user(
+        cursor,
+        username=settings.admin_username,
+        password=settings.admin_password,
+        role="admin",
+    )
+    conn.commit()
 
     cursor.execute(
         "DELETE FROM recommendation_logs WHERE timestamp < datetime('now', ?)",
@@ -122,6 +138,58 @@ def init_db():
         )
 
     conn.close()
+
+
+def _ensure_sqlite_columns(cursor: sqlite3.Cursor) -> None:
+    """Apply small forward-compatible SQLite fixes for existing local volumes."""
+    table_columns = {
+        row["name"] for row in cursor.execute("PRAGMA table_info(user_history)")
+    }
+    if "order_idx" not in table_columns:
+        cursor.execute(
+            "ALTER TABLE user_history ADD COLUMN order_idx INTEGER NOT NULL DEFAULT 0"
+        )
+    if "added_at" not in table_columns:
+        cursor.execute(
+            "ALTER TABLE user_history ADD COLUMN added_at DATETIME DEFAULT CURRENT_TIMESTAMP"
+        )
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS alembic_version (
+        version_num VARCHAR(32) NOT NULL,
+        CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)
+    );
+    """)
+    cursor.execute("SELECT COUNT(*) AS count FROM alembic_version")
+    if cursor.fetchone()["count"] == 0:
+        cursor.execute(
+            "INSERT INTO alembic_version (version_num) VALUES (?)",
+            ("c31f53b0d12f",),
+        )
+
+
+def _ensure_seed_user(
+    cursor: sqlite3.Cursor, username: str, password: str, role: str
+) -> None:
+    cursor.execute(
+        "SELECT id, password_hash FROM users WHERE username = ?",
+        (username,),
+    )
+    row = cursor.fetchone()
+    if row is None:
+        cursor.execute(
+            "INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)",
+            (username, hash_password(password), role),
+        )
+        log.info("Seeded %s user: %s", role, username)
+        return
+
+    if not _has_valid_bcrypt_hash(row["password_hash"]):
+        cursor.execute(
+            "UPDATE users SET password_hash = ?, role = ? WHERE id = ?",
+            (hash_password(password), role, row["id"]),
+        )
+        log.warning("Repaired invalid password hash for configured %s user", role)
 
 
 def get_user_by_username(username: str) -> dict | None:

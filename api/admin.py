@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
-from core.security import require_admin
 from core import database
 from core.config import settings
+from core.security import require_admin
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 

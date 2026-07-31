@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from core.security import verify_token
 from core import database
+from core.security import verify_token
 from models.embeddings import item_embeddings
 
 router = APIRouter(prefix="/history", tags=["history"])

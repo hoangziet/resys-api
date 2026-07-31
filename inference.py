@@ -21,7 +21,6 @@ import torch
 from torch import Tensor
 
 from core.config import settings
-
 from models.bert4recpy import BERT4Rec
 
 logger = logging.getLogger(__name__)
@@ -134,7 +133,10 @@ def predict(
 
     top_k = min(top_k, model.n_items)
     topk = torch.topk(logits, top_k)
-    return [(idx.item(), score.item()) for score, idx in zip(topk.values, topk.indices)]
+    return [
+        (idx.item(), score.item())
+        for score, idx in zip(topk.values, topk.indices, strict=True)
+    ]
 
 
 def recommend(

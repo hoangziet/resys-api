@@ -4,17 +4,16 @@ import logging
 import math
 import threading
 import time
-from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from core import database
 from core.config import settings
 from core.rate_limit import limiter
+from core.security import verify_token
 from inference import load_model, predict
 from models.embeddings import item_embeddings
-from core.security import verify_token
-from core import database
 
 logger = logging.getLogger(__name__)
 
@@ -104,7 +103,7 @@ def for_you(
 
         logits = [score for _, score in top_items]
         max_logit = max(logits) if logits else 0.0
-        exp_logits = [math.exp(l - max_logit) for l in logits]
+        exp_logits = [math.exp(logit - max_logit) for logit in logits]
         sum_exp = sum(exp_logits)
         probs = (
             [e / sum_exp for e in exp_logits] if sum_exp > 0 else [0.0] * len(logits)
@@ -112,10 +111,10 @@ def for_you(
 
         items = [
             item_embeddings.serialize_item(item_idx) | {"score": prob}
-            for (item_idx, _), prob in zip(top_items, probs)
+            for (item_idx, _), prob in zip(top_items, probs, strict=True)
         ]
         strategy = "bert4rec_personalized"
-    except Exception as exc:
+    except Exception:
         logger.exception("BERT4Rec inference failed, falling back to popular")
         items = item_embeddings.get_popular_items(limit=body.limit)
         strategy = "popular_fallback_error"
@@ -164,7 +163,7 @@ def you_may_also_like(
             for item_idx, score in recommendations
         ]
         strategy = "vector_similarity"
-    except Exception as exc:
+    except Exception:
         logger.exception(
             "Vector similarity failed for anchor=%d, falling back to popular",
             anchor_idx,
@@ -199,6 +198,11 @@ def similar_courses(
     token_data=Depends(verify_token),
 ) -> dict:
     start_time = time.perf_counter()
+    if course_id not in item_embeddings.item_idx_set:
+        raise HTTPException(
+            status_code=404, detail=f"Course with item_idx {course_id} not found"
+        )
+
     try:
         recommendations = item_embeddings.similar_items(course_id, top_k=body.limit)
         items = [
@@ -206,7 +210,7 @@ def similar_courses(
             for item_idx, score in recommendations
         ]
         strategy = "vector_similarity"
-    except Exception as exc:
+    except Exception:
         logger.exception(
             "Vector similarity failed for course=%d, falling back to popular", course_id
         )
