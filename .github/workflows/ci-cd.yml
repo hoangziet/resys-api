@@ -67,6 +67,7 @@ jobs:
     needs: docker-build
     if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     env:
+      DEPLOY_BRANCH: ${{ github.ref_name }}
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
@@ -89,4 +90,4 @@ jobs:
       - name: Deploy
         run: |
           ssh -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" \
-            "set -eu; cd '$VPS_APP_DIR'; git fetch --prune origin; git checkout develop; git reset --hard '$GITHUB_SHA'; docker compose up --build -d; docker compose ps"
+            "set -eu; cd '$VPS_APP_DIR'; git fetch --prune origin; git checkout '$DEPLOY_BRANCH'; git reset --hard '$GITHUB_SHA'; docker compose up --build -d; docker compose ps"
