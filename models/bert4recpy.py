@@ -41,7 +41,7 @@ class TextItemEncoder(nn.Module):
         path = Path(path) if path is not None else LOCAL_TEXT_EMBEDDINGS_PATH
         if not path.exists():
             raise FileNotFoundError(f"Text embedding checkpoint not found: {path}")
-        text_embeddings = torch.load(path, map_location="cpu")
+        text_embeddings = torch.load(path, map_location="cpu", weights_only=True)
         return cls(text_embeddings=text_embeddings, hidden_dim=hidden_dim)
 
     def forward(self, item_ids: torch.Tensor) -> torch.Tensor:
@@ -50,10 +50,19 @@ class TextItemEncoder(nn.Module):
 
 
 class BERT4Rec(nn.Module):
-    def __init__(self, n_items, max_len=50, hidden_dim=64, num_heads=2,
-                 num_layers=2, dropout=0.2,
-                 watch_mode="none", watch_num_bins=5, watch_alpha=1.0,
-                 item_encoder=None):
+    def __init__(
+        self,
+        n_items,
+        max_len=50,
+        hidden_dim=64,
+        num_heads=2,
+        num_layers=2,
+        dropout=0.2,
+        watch_mode="none",
+        watch_num_bins=5,
+        watch_alpha=1.0,
+        item_encoder=None,
+    ):
         super().__init__()
         self.n_items = n_items
         self.hidden_dim = hidden_dim
@@ -68,11 +77,15 @@ class BERT4Rec(nn.Module):
         self.item_embedding = nn.Embedding(self.vocab_size, hidden_dim, padding_idx=0)
         self.pos_embedding = nn.Embedding(max_len, hidden_dim)
 
-        # watch embedding: pad(0) + mask(1) + num_bins engagement bins
-        self.watch_embedding = nn.Embedding(watch_num_bins + 2, hidden_dim, padding_idx=0)
+        self.watch_embedding = None
+        if watch_mode in {"embedding", "both"}:
+            self.watch_embedding = nn.Embedding(
+                watch_num_bins + 2, hidden_dim, padding_idx=0
+            )
 
-        # mask token embedding for item_encoder path
-        self.mask_embedding = nn.Embedding(1, hidden_dim)
+        self.mask_embedding = None
+        if item_encoder is not None:
+            self.mask_embedding = nn.Embedding(1, hidden_dim)
 
         self.input_ln = nn.LayerNorm(hidden_dim, eps=1e-12)
         self.dropout = nn.Dropout(dropout)
@@ -88,7 +101,7 @@ class BERT4Rec(nn.Module):
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
 
         self.pred_ffn = nn.Linear(hidden_dim, hidden_dim)
-        self.pred_ln  = nn.LayerNorm(hidden_dim, eps=1e-12)
+        self.pred_ln = nn.LayerNorm(hidden_dim, eps=1e-12)
 
         self.out_bias = nn.Parameter(torch.zeros(n_items))
 
@@ -103,20 +116,24 @@ class BERT4Rec(nn.Module):
         nn.init.zeros_(self.input_ln.bias)
         nn.init.ones_(self.pred_ln.weight)
         nn.init.zeros_(self.pred_ln.bias)
-        nn.init.normal_(self.watch_embedding.weight, std=0.02)
-        nn.init.normal_(self.mask_embedding.weight, std=0.02)
+        if self.watch_embedding is not None:
+            nn.init.normal_(self.watch_embedding.weight, std=0.02)
+        if self.mask_embedding is not None:
+            nn.init.normal_(self.mask_embedding.weight, std=0.02)
         with torch.no_grad():
             self.item_embedding.weight[0].zero_()
-            self.watch_embedding.weight[0].zero_()
+            if self.watch_embedding is not None:
+                self.watch_embedding.weight[0].zero_()
 
     def _item_input_embedding(self, input_seq: torch.Tensor) -> torch.Tensor:
         if self.item_encoder is None:
             return self.item_embedding(input_seq)
         real_ids = input_seq.clamp(max=self.n_items)
         encoded = self.item_encoder(real_ids)
-        mask_token_mask = (input_seq == self.mask_token).unsqueeze(-1)
-        mask_emb = self.mask_embedding.weight[0].view(1, 1, -1)
-        encoded = torch.where(mask_token_mask, mask_emb, encoded)
+        if self.mask_embedding is not None:
+            mask_token_mask = (input_seq == self.mask_token).unsqueeze(-1)
+            mask_emb = self.mask_embedding.weight[0].view(1, 1, -1)
+            encoded = torch.where(mask_token_mask, mask_emb, encoded)
         return encoded
 
     def forward(self, input_seq, watch_input_ids=None):
@@ -127,13 +144,13 @@ class BERT4Rec(nn.Module):
         # ponytail: watch embeddings are a training-time augmentation only.
         # At inference (watch_input_ids=None), the model runs on base item+position
         # representations, analogous to how dropout is disabled at eval time.
-        if self.watch_mode in {"embedding", "both"} and watch_input_ids is not None:
+        if self.watch_embedding is not None and watch_input_ids is not None:
             x = x + self.watch_embedding(watch_input_ids)
 
-        x = self.input_ln(x)   # LayerNorm before dropout (BERT convention)
+        x = self.input_ln(x)  # LayerNorm before dropout (BERT convention)
         x = self.dropout(x)
 
-        padding_mask = (input_seq == self.pad_token)
+        padding_mask = input_seq == self.pad_token
         x = self.transformer(x, src_key_padding_mask=padding_mask)
 
         # MLM prediction head: transform hidden states before weight-tied projection
@@ -146,8 +163,10 @@ class BERT4Rec(nn.Module):
         real_item_logits = F.linear(x, real_item_weight, self.out_bias)
 
         padding_logits = torch.zeros(
-            *real_item_logits.shape[:-1], 1,
-            dtype=real_item_logits.dtype, device=real_item_logits.device,
+            *real_item_logits.shape[:-1],
+            1,
+            dtype=real_item_logits.dtype,
+            device=real_item_logits.device,
         )
         return torch.nan_to_num(
             torch.cat([padding_logits, real_item_logits], dim=-1),
@@ -169,7 +188,9 @@ class BERT4Rec(nn.Module):
 
         real_item_logits = logits[..., 1:][valid_mask]
         zero_based_labels = valid_labels - 1
-        per_token = F.cross_entropy(real_item_logits, zero_based_labels, reduction="none")
+        per_token = F.cross_entropy(
+            real_item_logits, zero_based_labels, reduction="none"
+        )
 
         if self.watch_mode in {"loss", "both"} and engagement is not None:
             weights = 1.0 + self.watch_alpha * engagement[valid_mask].clamp(0.0, 1.0)

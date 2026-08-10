@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -7,12 +8,15 @@
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet">
   <!-- FontAwesome Icons -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <!-- Custom Stylesheet -->
   <link rel="stylesheet" href="/assets/style.css" />
 </head>
+
 <body>
   <!-- Toast Notification System -->
   <div id="toast-container"></div>
@@ -45,7 +49,8 @@
           </div>
           <div class="form-group">
             <label for="login-password"><i class="fa-regular fa-key"></i> Password</label>
-            <input type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password" />
+            <input type="password" id="login-password" placeholder="••••••••" required
+              autocomplete="current-password" />
           </div>
           <button type="submit" class="btn btn-primary btn-block">Sign In</button>
           <p class="auth-switch">Don't have an account? <a href="#" id="go-to-register">Register here</a></p>
@@ -55,11 +60,13 @@
         <form id="register-form" class="auth-form hidden">
           <div class="form-group">
             <label for="register-username"><i class="fa-regular fa-user"></i> Username</label>
-            <input type="text" id="register-username" placeholder="Choose a username" required autocomplete="username" />
+            <input type="text" id="register-username" placeholder="Choose a username" required
+              autocomplete="username" />
           </div>
           <div class="form-group">
             <label for="register-password"><i class="fa-regular fa-key"></i> Password</label>
-            <input type="password" id="register-password" placeholder="Create a password" required autocomplete="new-password" />
+            <input type="password" id="register-password" placeholder="Create a password" required
+              autocomplete="new-password" />
           </div>
           <button type="submit" class="btn btn-success btn-block">Create Account</button>
           <p class="auth-switch">Already have an account? <a href="#" id="go-to-login">Log in here</a></p>
@@ -68,8 +75,8 @@
         <div class="auth-hints">
           <p><i class="fa-solid fa-circle-info"></i> Demo accounts:</p>
           <ul>
-            <li>Learner: <code>learner</code> / <code>secret</code></li>
-            <li>Admin: <code>admin</code> / <code>adminsecret</code></li>
+            <li>Learner: <code>learner</code> / <code>Learner123</code></li>
+            <li>Admin: <code>admin</code> / <code>Admin123</code></li>
           </ul>
         </div>
       </div>
@@ -138,7 +145,8 @@
           <div class="welcome-banner">
             <div class="welcome-text">
               <h2>Welcome to MARS Recommendation System!</h2>
-              <p>Your interactive sequence-based platform for advanced technical courses. Start studying, updating your history, and see recommendations adapt in real time.</p>
+              <p>Your interactive sequence-based platform for advanced technical courses. Start studying, updating your
+                history, and see recommendations adapt in real time.</p>
             </div>
             <div class="welcome-stats">
               <div class="stat-card">
@@ -153,7 +161,8 @@
             <!-- Rail: Popular (Trending Courses) -->
             <div class="rail-container">
               <div class="rail-header">
-                <h3><i class="fa-solid fa-fire"></i> Trending Courses <span class="badge badge-orange">Popularity Fallback</span></h3>
+                <h3><i class="fa-solid fa-fire"></i> Trending Courses <span class="badge badge-orange">Popularity
+                    Fallback</span></h3>
                 <span class="rail-subtitle">Highest trending courses on the MARS catalog</span>
               </div>
               <div class="rail-slider" id="rail-popular">
@@ -175,7 +184,8 @@
             <!-- Rail: You May Also Like (Vector Similarity) -->
             <div class="rail-container">
               <div class="rail-header">
-                <h3><i class="fa-solid fa-thumbs-up"></i> You May Also Like <span class="badge badge-blue">Text Vector Similarity</span></h3>
+                <h3><i class="fa-solid fa-thumbs-up"></i> You May Also Like <span class="badge badge-blue">Text Vector
+                    Similarity</span></h3>
                 <span class="rail-subtitle">Courses content-wise similar to your latest activity</span>
               </div>
               <div class="rail-slider" id="rail-you-may-also-like">
@@ -190,10 +200,11 @@
           <div class="search-panel">
             <div class="search-bar-wrapper">
               <i class="fa-solid fa-magnifying-glass search-icon"></i>
-              <input type="text" id="search-input" placeholder="Search courses by title, description, software, or technology..." />
+              <input type="text" id="search-input"
+                placeholder="Search courses by title, description, software, or technology..." />
               <button id="search-clear" class="btn-clear hidden"><i class="fa-solid fa-xmark"></i></button>
             </div>
-            
+
             <div class="search-filters">
               <div class="filter-group">
                 <label for="filter-difficulty">Difficulty</label>
@@ -204,7 +215,7 @@
                   <option value="Avancé">Avancé (Advanced)</option>
                 </select>
               </div>
-              
+
               <div class="filter-group">
                 <label for="filter-language">Language</label>
                 <select id="filter-language">
@@ -239,9 +250,11 @@
           <div class="history-controls">
             <div class="history-summary">
               <h2>My Study Journal</h2>
-              <p>Your history represents the chronological sequence feed passed to the <strong>BERT4Rec sequence model</strong>. Modifying items will instantly adjust your recommendations.</p>
+              <p>Your history represents the chronological sequence feed passed to the <strong>BERT4Rec sequence
+                  model</strong>. Modifying items will instantly adjust your recommendations.</p>
             </div>
-            <button id="btn-clear-history" class="btn btn-danger-outline"><i class="fa-regular fa-trash-can"></i> Clear History</button>
+            <button id="btn-clear-history" class="btn btn-danger-outline"><i class="fa-regular fa-trash-can"></i> Clear
+              History</button>
           </div>
 
           <div id="history-empty" class="empty-state hidden">
@@ -288,8 +301,10 @@
                 </div>
               </div>
               <div class="admin-actions">
-                <button id="btn-sync-catalog" class="btn btn-primary"><i class="fa-solid fa-rotate"></i> Sync Course Catalog</button>
-                <button id="btn-rebuild-emb" class="btn btn-secondary"><i class="fa-solid fa-hammer"></i> Rebuild Vector Embeddings</button>
+                <button id="btn-sync-catalog" class="btn btn-primary"><i class="fa-solid fa-rotate"></i> Sync Course
+                  Catalog</button>
+                <button id="btn-rebuild-emb" class="btn btn-secondary"><i class="fa-solid fa-hammer"></i> Rebuild Vector
+                  Embeddings</button>
               </div>
             </div>
 
@@ -319,7 +334,8 @@
           <div class="logs-panel">
             <div class="logs-header">
               <h3><i class="fa-solid fa-terminal"></i> Recommendation Request Logs</h3>
-              <button id="btn-refresh-logs" class="btn btn-secondary-outline"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+              <button id="btn-refresh-logs" class="btn btn-secondary-outline"><i class="fa-solid fa-rotate-right"></i>
+                Refresh</button>
             </div>
             <div class="logs-table-wrapper">
               <table class="logs-table">
@@ -347,7 +363,7 @@
     <div id="detail-drawer" class="drawer-overlay hidden">
       <div class="drawer-container">
         <button id="btn-close-drawer" class="btn-close-drawer"><i class="fa-solid fa-xmark"></i></button>
-        
+
         <div class="drawer-video-wrapper">
           <video id="drawer-video" controls poster="/assets/thumbnail.png">
             <source src="/assets/video.mp4" type="video/mp4">
@@ -389,4 +405,5 @@
   <!-- Custom Scripts -->
   <script src="/assets/app.js"></script>
 </body>
+
 </html>

@@ -9,7 +9,10 @@ router = APIRouter(prefix="/courses", tags=["courses"])
 
 
 @router.get("/")
-def list_courses(q: str | None = Query(None, description="Search query"), token_data=Depends(verify_token)) -> dict:
+def list_courses(
+    q: str | None = Query(None, description="Search query"),
+    token_data=Depends(verify_token),
+) -> dict:
     results = item_embeddings.search_items(q, limit=100)
     return {"data": results, "total": len(results), "query": q}
 
@@ -19,5 +22,6 @@ def get_course(course_id: int, token_data=Depends(verify_token)) -> dict:
     try:
         return item_embeddings.serialize_item(course_id)
     except KeyError:
-        raise HTTPException(status_code=404, detail=f"Course with item_idx {course_id} not found")
-
+        raise HTTPException(
+            status_code=404, detail=f"Course with item_idx {course_id} not found"
+        ) from None

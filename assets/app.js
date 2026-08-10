@@ -88,21 +88,23 @@ document.addEventListener("DOMContentLoaded", () => {
 function showToast(title, message, type = "success") {
   const toast = document.createElement("div");
   toast.className = `toast ${type}`;
-  
+
   let icon = "fa-circle-check";
   if (type === "error") icon = "fa-circle-xmark";
   if (type === "info") icon = "fa-circle-info";
-  
+
   toast.innerHTML = `
     <i class="fa-solid ${icon} toast-icon"></i>
     <div class="toast-content">
-      <div class="toast-title">${title}</div>
-      <div class="toast-message">${message}</div>
+      <div class="toast-title"></div>
+      <div class="toast-message"></div>
     </div>
   `;
-  
+  toast.querySelector(".toast-title").textContent = title;
+  toast.querySelector(".toast-message").textContent = message;
+
   toastContainer.appendChild(toast);
-  
+
   // Auto remove toast
   setTimeout(() => {
     toast.style.transform = "translateY(-20px)";
@@ -123,13 +125,13 @@ function toggleLoading(show) {
 // --- API Request Wrapper ---
 async function apiRequest(endpoint, method = "GET", body = null) {
   const headers = {};
-  
+
   if (state.token) {
     headers["Authorization"] = `Bearer ${state.token}`;
   }
-  
+
   const options = { method, headers };
-  
+
   if (body) {
     if (body instanceof URLSearchParams) {
       headers["Content-Type"] = "application/x-www-form-urlencoded";
@@ -139,23 +141,23 @@ async function apiRequest(endpoint, method = "GET", body = null) {
       options.body = JSON.stringify(body);
     }
   }
-  
+
   try {
     const response = await fetch(`${API_PREFIX}${endpoint}`, options);
-    
+
     if (response.status === 401) {
       // Auto logout on token expired
       logout();
       showToast("Session Expired", "Please log in again.", "error");
       throw new Error("Unauthorized");
     }
-    
+
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
       const message = errorData.detail?.message || errorData.detail || "API Request failed";
       throw new Error(message);
     }
-    
+
     return await response.json();
   } catch (error) {
     console.error(`API Error (${endpoint}):`, error);
@@ -168,11 +170,11 @@ function checkAuth() {
   if (state.token) {
     authScreen.classList.add("hidden");
     dashboardScreen.classList.remove("hidden");
-    
+
     userDisplayName.textContent = state.username;
     userRoleBadge.textContent = state.role;
     userRoleBadge.className = `badge ${state.role === "admin" ? "badge-orange" : "badge-indigo"}`;
-    
+
     // Show admin options if role is admin
     const adminItems = document.querySelectorAll(".admin-only");
     adminItems.forEach(item => {
@@ -182,7 +184,7 @@ function checkAuth() {
         item.classList.add("hidden");
       }
     });
-    
+
     // Reset view to dashboard tab
     switchTab("dashboard");
     refreshDashboard();
@@ -210,7 +212,7 @@ function logout() {
   localStorage.removeItem("username");
   localStorage.removeItem("user_role");
   checkAuth();
-  
+
   // Pause any playing video
   drawerVideo.pause();
   detailDrawer.classList.add("hidden");
@@ -248,18 +250,19 @@ function setupEventListeners() {
     toggleLoading(true);
     const username = document.getElementById("login-username").value.trim();
     const password = document.getElementById("login-password").value;
-    
+
     const params = new URLSearchParams();
     params.append("username", username);
     params.append("password", password);
-    
+
     try {
       const data = await apiRequest("/auth/token", "POST", params);
-      
-      // Decode JWT token payload to grab role (simple base64 decode for sub/role)
+
+      // Decode JWT token payload to grab role (base64url-safe decode)
       const payloadBase64 = data.access_token.split(".")[1];
-      const payload = JSON.parse(atob(payloadBase64));
-      
+      const padded = payloadBase64.replace(/-/g, "+").replace(/_/g, "/");
+      const payload = JSON.parse(atob(padded));
+
       saveSession(data.access_token, payload.sub, payload.role || "learner");
       showToast("Success", `Welcome back, ${payload.sub}!`, "success");
     } catch (err) {
@@ -274,19 +277,20 @@ function setupEventListeners() {
     toggleLoading(true);
     const username = document.getElementById("register-username").value.trim();
     const password = document.getElementById("register-password").value;
-    
+
     try {
       await apiRequest("/auth/register", "POST", { username, password });
       showToast("Success", "Account created! Logging in...", "success");
-      
+
       // Auto Login
       const params = new URLSearchParams();
       params.append("username", username);
       params.append("password", password);
       const data = await apiRequest("/auth/token", "POST", params);
-      
+
       const payloadBase64 = data.access_token.split(".")[1];
-      const payload = JSON.parse(atob(payloadBase64));
+      const padded = payloadBase64.replace(/-/g, "+").replace(/_/g, "/");
+      const payload = JSON.parse(atob(padded));
       saveSession(data.access_token, payload.sub, payload.role || "learner");
     } catch (err) {
       showToast("Registration Failed", err.message, "error");
@@ -313,7 +317,7 @@ function setupEventListeners() {
     } else {
       searchClearBtn.classList.add("hidden");
     }
-    
+
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
       runSearch();
@@ -337,7 +341,7 @@ function setupEventListeners() {
     if (!state.openCourse) return;
     const isLearned = state.history.some(idx => idx === state.openCourse.item_idx);
     toggleLoading(true);
-    
+
     try {
       if (isLearned) {
         // Remove from history
@@ -348,13 +352,13 @@ function setupEventListeners() {
         await apiRequest(`/history/?item_idx=${state.openCourse.item_idx}`, "POST");
         showToast("Learned", "Course marked as learned!", "success");
       }
-      
+
       // Refresh history state
       await loadHistory();
-      
+
       // Update toggle button UI
       updateDrawerToggleButton();
-      
+
       // Refresh home recommendations
       await loadRecommendations();
     } catch (err) {
@@ -368,13 +372,10 @@ function setupEventListeners() {
   clearHistoryBtn.addEventListener("click", async () => {
     if (state.history.length === 0) return;
     if (!confirm("Are you sure you want to clear your learning history? This will reset all personalization rails.")) return;
-    
+
     toggleLoading(true);
     try {
-      // Delete items sequentially in loop
-      for (const item_idx of [...state.history]) {
-        await apiRequest(`/history/${item_idx}`, "DELETE");
-      }
+      await apiRequest("/history/", "DELETE");
       showToast("Success", "Learning history cleared", "info");
       await loadHistory();
       await loadRecommendations();
@@ -427,7 +428,7 @@ function setupEventListeners() {
 // --- Tab Switching Navigation ---
 function switchTab(tabId) {
   state.currentTab = tabId;
-  
+
   // Set navbar active class
   navItems.forEach(item => {
     if (item.getAttribute("data-tab") === tabId) {
@@ -480,28 +481,93 @@ async function refreshDashboard() {
   }
 }
 
+// --- Recommendation Cache (localStorage fallback) ---
+const RECO_CACHE_KEY = "reco_cache";
+const RECO_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getRecoCache() {
+  try {
+    const raw = localStorage.getItem(RECO_CACHE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function setRecoCache(data) {
+  try {
+    localStorage.setItem(RECO_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+  } catch { /* storage full — ignore */ }
+}
+
+function isRecoCacheValid(cache) {
+  return cache && (Date.now() - cache.ts) < RECO_CACHE_TTL_MS;
+}
+
 // --- Load Recommendations ---
 async function loadRecommendations() {
   // Show Skeletons
   railForYou.innerHTML = renderSkeletons(4);
   railYouMayLike.innerHTML = renderSkeletons(4);
   railPopular.innerHTML = renderSkeletons(4);
-  
+
+  const cached = getRecoCache();
+  let forYouRes, youMayRes, popularRes;
+  let hitRateLimit = false;
+
   try {
-    // 1. For You
-    const forYouRes = await apiRequest("/recommendations/for-you", "POST", { limit: 10 });
-    railForYou.innerHTML = renderCourseCards(forYouRes.items, forYouRes.source);
-
-    // 2. You May Also Like
-    const youMayRes = await apiRequest("/recommendations/you-may-also-like", "POST", { limit: 10 });
-    railYouMayLike.innerHTML = renderCourseCards(youMayRes.items, youMayRes.source);
-
-    // 3. Popular
-    const popularRes = await apiRequest("/recommendations/popular", "POST", { limit: 10 });
-    railPopular.innerHTML = renderCourseCards(popularRes.items, popularRes.source);
-    
+    forYouRes = await apiRequest("/recommendations/for-you", "POST", { limit: 10 });
   } catch (err) {
-    showToast("Recommender Failure", "Could not query recommended course rails: " + err.message, "error");
+    if (err.message?.includes("429") || err.message?.includes("Rate limit")) {
+      hitRateLimit = true;
+    }
+  }
+
+  try {
+    youMayRes = await apiRequest("/recommendations/you-may-also-like", "POST", { limit: 10 });
+  } catch (err) {
+    if (err.message?.includes("429") || err.message?.includes("Rate limit")) {
+      hitRateLimit = true;
+    }
+  }
+
+  try {
+    popularRes = await apiRequest("/recommendations/popular", "POST", { limit: 10 });
+  } catch (err) {
+    if (err.message?.includes("429") || err.message?.includes("Rate limit")) {
+      hitRateLimit = true;
+    }
+  }
+
+  // If at least one succeeded, cache the results
+  if (forYouRes || youMayRes || popularRes) {
+    setRecoCache({ forYou: forYouRes, youMay: youMayRes, popular: popularRes });
+  }
+
+  // Render — prefer fresh data, fallback to cache, then show message
+  if (forYouRes) {
+    railForYou.innerHTML = renderCourseCards(forYouRes.items, forYouRes.source);
+  } else if (cached?.data?.forYou) {
+    railForYou.innerHTML = renderCourseCards(cached.data.forYou.items, cached.data.forYou.source);
+  }
+
+  if (youMayRes) {
+    railYouMayLike.innerHTML = renderCourseCards(youMayRes.items, youMayRes.source);
+  } else if (cached?.data?.youMay) {
+    railYouMayLike.innerHTML = renderCourseCards(cached.data.youMay.items, cached.data.youMay.source);
+  }
+
+  if (popularRes) {
+    railPopular.innerHTML = renderCourseCards(popularRes.items, popularRes.source);
+  } else if (cached?.data?.popular) {
+    railPopular.innerHTML = renderCourseCards(cached.data.popular.items, cached.data.popular.source);
+  }
+
+  if (hitRateLimit) {
+    const msg = isRecoCacheValid(cached)
+      ? "Rate limit reached — showing cached recommendations."
+      : "Rate limit reached — please try again in a moment.";
+    showToast("Slow down", msg, "info");
   }
 }
 
@@ -533,34 +599,34 @@ function renderCourseCards(items, source) {
   if (!items || items.length === 0) {
     return `<div class="empty-rail-msg">No recommendations available. Update your history to trigger predictions.</div>`;
   }
-  
+
   return items.map(item => {
     const formattedDuration = formatDuration(item.duration);
     const isBert = source === "bert4rec_personalized" || source === "bert4rec";
     const scoreText = (item.score !== undefined && !isBert) ? `${Math.round(item.score * 100)}% Match` : "";
 
 
-    
+
     return `
       <div class="card" onclick="openCourseDetail(${item.item_idx})">
         <div class="card-img-wrapper">
-          <img src="${item.thumbnail_url}" alt="${item.title}" />
-          ${scoreText ? `<div class="card-score-badge">${scoreText}</div>` : ""}
+          <img src="${escapeHtml(item.thumbnail_url)}" alt="${escapeHtml(item.title)}" />
+          ${scoreText ? `<div class="card-score-badge">${escapeHtml(scoreText)}</div>` : ""}
         </div>
         <div class="card-body">
           <div class="card-meta-row">
-            <span class="badge ${item.language === "fr" ? "badge-blue" : "badge-indigo"}">${item.language || "fr"}</span>
-            <span class="badge badge-light-blue">${item.type || "Course"}</span>
+            <span class="badge ${item.language === "fr" ? "badge-blue" : "badge-indigo"}">${escapeHtml(item.language || "fr")}</span>
+            <span class="badge badge-light-blue">${escapeHtml(item.type || "Course")}</span>
           </div>
-          <h4 class="card-title" title="${item.title}">${item.title}</h4>
-          <p class="card-desc">${cleanHtmlDescription(item.description)}</p>
+          <h4 class="card-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</h4>
+          <p class="card-desc">${escapeHtml(item.description)}</p>
         </div>
         <div class="card-footer">
           <div class="card-footer-tags">
-            <span class="badge badge-light-blue">${item.theme || "Tech"}</span>
+            <span class="badge badge-light-blue">${escapeHtml(item.theme || "Tech")}</span>
           </div>
           <div class="card-duration">
-            <i class="fa-regular fa-clock"></i> ${formattedDuration}
+            <i class="fa-regular fa-clock"></i> ${escapeHtml(formattedDuration)}
           </div>
         </div>
       </div>
@@ -569,8 +635,15 @@ function renderCourseCards(items, source) {
 }
 
 // --- Parse Helpers ---
+function escapeHtml(str) {
+  if (str == null) return "";
+  const div = document.createElement("div");
+  div.appendChild(document.createTextNode(String(str)));
+  return div.innerHTML;
+}
+
 function formatDuration(sec) {
-  if (!sec) return "—";
+  if (!sec) return "\u2014";
   const mins = Math.round(sec / 60);
   if (mins < 60) return `${mins}m`;
   const hrs = Math.floor(mins / 60);
@@ -578,20 +651,11 @@ function formatDuration(sec) {
   return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`;
 }
 
-function cleanHtmlDescription(desc) {
-  if (!desc) return "No description available.";
-  // Strip simple html tags
-  let text = desc.replace(/<\/?[^>]+(>|$)/g, "");
-  // Unescape HTML entities
-  text = text.replace(/&#039;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&');
-  return text;
-}
-
 // --- Search Engine ---
 async function runSearch() {
   searchResultsGrid.innerHTML = renderSkeletons(8);
   const q = searchInput.value.trim();
-  
+
   try {
     const res = await apiRequest(`/courses/?q=${encodeURIComponent(q)}`, "GET");
     let courses = res.data;
@@ -600,7 +664,7 @@ async function runSearch() {
     const difficultyVal = filterDifficulty.value;
     const languageVal = filterLanguage.value;
     const typeVal = filterType.value;
-    
+
     if (difficultyVal) {
       courses = courses.filter(c => c.difficulty && c.difficulty.toLowerCase().includes(difficultyVal.toLowerCase()));
     }
@@ -647,15 +711,15 @@ async function renderHistoryTimeline() {
 
     historyEmptyState.classList.add("hidden");
     clearHistoryBtn.classList.remove("hidden");
-    
+
     historyTimeline.innerHTML = history.map((item, index) => `
       <div class="timeline-item">
         <div class="timeline-node"></div>
         <div class="timeline-content-wrapper">
           <div class="timeline-idx-circle">${index + 1}</div>
           <div class="timeline-info" onclick="openCourseDetail(${item.item_idx})">
-            <h4>${item.title}</h4>
-            <p>${item.type || "Course"} • ${item.language || "fr"} • ${formatDuration(item.duration)}</p>
+            <h4>${escapeHtml(item.title)}</h4>
+            <p>${escapeHtml(item.type || "Course")} • ${escapeHtml(item.language || "fr")} • ${escapeHtml(formatDuration(item.duration))}</p>
           </div>
         </div>
         <button class="btn-remove-timeline" onclick="deleteHistoryItem(${item.item_idx})" title="Remove from sequence">
@@ -672,7 +736,7 @@ async function renderHistoryTimeline() {
 }
 
 // Global functions for inline onclick handlers
-window.deleteHistoryItem = async function(item_idx) {
+window.deleteHistoryItem = async function (item_idx) {
   event.stopPropagation();
   toggleLoading(true);
   try {
@@ -692,41 +756,41 @@ window.deleteHistoryItem = async function(item_idx) {
 };
 
 // --- Course Details Drawer ---
-window.openCourseDetail = async function(item_idx) {
+window.openCourseDetail = async function (item_idx) {
   toggleLoading(true);
   drawerVideo.pause();
-  
+
   try {
     const course = await apiRequest(`/courses/${item_idx}`, "GET");
     state.openCourse = course;
-    
+
     // Set text contents
     drawerTitle.textContent = course.title;
     drawerMeta.textContent = `${course.language || "fr"} • ${course.type || "Course"} • ${formatDuration(course.duration)}`;
-    drawerDesc.innerHTML = course.description || "<p>No description available.</p>";
-    
+    drawerDesc.textContent = course.description || "No description available.";
+
     // Set tags
     let tagsHtml = "";
-    if (course.difficulty) tagsHtml += `<span class="badge badge-indigo">${course.difficulty}</span>`;
-    if (course.theme) tagsHtml += `<span class="badge badge-blue">${course.theme}</span>`;
-    if (course.software) tagsHtml += `<span class="badge badge-orange">${course.software}</span>`;
-    if (course.job) tagsHtml += `<span class="badge badge-green">${course.job}</span>`;
+    if (course.difficulty) tagsHtml += `<span class="badge badge-indigo">${escapeHtml(course.difficulty)}</span>`;
+    if (course.theme) tagsHtml += `<span class="badge badge-blue">${escapeHtml(course.theme)}</span>`;
+    if (course.software) tagsHtml += `<span class="badge badge-orange">${escapeHtml(course.software)}</span>`;
+    if (course.job) tagsHtml += `<span class="badge badge-green">${escapeHtml(course.job)}</span>`;
     drawerTags.innerHTML = tagsHtml;
-    
+
     // Set poster image & reset video
     drawerVideo.poster = course.thumbnail_url || "/assets/thumbnail.png";
     drawerVideo.load();
-    
+
     // Update learn button toggle
     updateDrawerToggleButton();
-    
+
     // Load Similar Courses
     drawerSimilar.innerHTML = `<div class="spinner" style="width: 24px; height: 24px; border-width: 2px; margin: 20px auto;"></div>`;
     detailDrawer.classList.remove("hidden");
-    
+
     const similarRes = await apiRequest(`/recommendations/similar/${course.item_idx}`, "POST", { limit: 4 });
     renderSimilarItems(similarRes.items);
-    
+
   } catch (err) {
     showToast("Error", "Could not load course details: " + err.message, "error");
   } finally {
@@ -750,12 +814,12 @@ function renderSimilarItems(items) {
     drawerSimilar.innerHTML = "<p style='font-size: 0.8rem; color: var(--text-muted);'>No similar courses found.</p>";
     return;
   }
-  
+
   drawerSimilar.innerHTML = items.map(item => `
     <div class="similar-item-card" onclick="openCourseDetail(${item.item_idx})">
       <div class="similar-item-info">
-        <h5 title="${item.title}">${item.title}</h5>
-        <p>${item.type || "Course"} • ${formatDuration(item.duration)}</p>
+        <h5 title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</h5>
+        <p>${escapeHtml(item.type || "Course")} • ${escapeHtml(formatDuration(item.duration))}</p>
       </div>
       <span class="similar-score">${Math.round(item.score * 100)}% Match</span>
     </div>
@@ -767,7 +831,7 @@ async function loadAdminDashboard() {
   toggleLoading(true);
   try {
     const health = await apiRequest("/admin/model-health", "GET");
-    
+
     if (health.status === "healthy") {
       adminModelStatus.textContent = "Healthy & Active";
       adminModelStatus.className = "badge badge-green";
@@ -782,7 +846,7 @@ async function loadAdminDashboard() {
       adminModelStatus.textContent = "Unavailable";
       adminModelStatus.className = "badge badge-rose";
     }
-    
+
     await loadAdminLogs();
   } catch (err) {
     showToast("Admin access error", err.message, "error");
@@ -794,24 +858,24 @@ async function loadAdminDashboard() {
 async function loadAdminLogs() {
   const res = await apiRequest("/admin/recommendation-logs", "GET");
   state.logs = res.logs;
-  
+
   // Render table rows
   if (!state.logs || state.logs.length === 0) {
     logsTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No logs recorded. Query recommendations to trigger audits.</td></tr>`;
     latencyBars.innerHTML = `<div class="chart-placeholder">No logs recorded yet. Query the model to track latencies!</div>`;
     return;
   }
-  
+
   logsTbody.innerHTML = state.logs.map(log => {
     const date = new Date(log.timestamp + "Z").toLocaleTimeString();
     return `
       <tr>
-        <td title="${log.timestamp}">${date}</td>
-        <td><code>${log.username || "anonymous"}</code></td>
-        <td><span class="badge ${getStrategyBadge(log.strategy)}">${log.strategy}</span></td>
+        <td title="${escapeHtml(log.timestamp)}">${escapeHtml(date)}</td>
+        <td><code>${escapeHtml(log.username || "anonymous")}</code></td>
+        <td><span class="badge ${getStrategyBadge(log.strategy)}">${escapeHtml(log.strategy)}</span></td>
         <td><strong>${Math.round(log.latency_ms)} ms</strong></td>
-        <td title="${log.history}"><code>${log.history || "empty"}</code></td>
-        <td title="${log.results}"><code>${log.results || "empty"}</code></td>
+        <td title="${escapeHtml(log.history)}"><code>${escapeHtml(log.history || "empty")}</code></td>
+        <td title="${escapeHtml(log.results)}"><code>${escapeHtml(log.results || "empty")}</code></td>
       </tr>
     `;
   }).join("");
@@ -831,23 +895,23 @@ function getStrategyBadge(strategy) {
 function renderLatencyChart() {
   // Grab the last 12 log queries and display them
   const recentLogs = [...state.logs].slice(0, 12).reverse();
-  
+
   if (recentLogs.length === 0) return;
-  
+
   latencyBars.innerHTML = recentLogs.map(log => {
     // Max visual height is 150px representing 50ms latency
     const maxVal = 50.0;
     const height = Math.min((log.latency_ms / maxVal) * 100, 100); // percentage height
-    
+
     let strategyClass = "pop";
     if (log.strategy === "bert4rec_personalized") strategyClass = "b4r";
     if (log.strategy === "vector_similarity") strategyClass = "sim";
-    
+
     const timeLabel = new Date(log.timestamp + "Z").toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     const tooltip = `${log.strategy}\nLatency: ${log.latency_ms.toFixed(1)}ms\nTime: ${timeLabel}`;
-    
+
     return `
-      <div class="latency-bar ${strategyClass}" style="height: ${height}%;" data-tooltip="${tooltip}"></div>
+      <div class="latency-bar ${strategyClass}" style="height: ${height}%;" title="${escapeHtml(tooltip)}"></div>
     `;
   }).join("");
 }

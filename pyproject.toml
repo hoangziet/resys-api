@@ -5,20 +5,39 @@ description = "API for course recommendation system"
 readme = "README.md"
 requires-python = ">=3.12,<3.14"
 dependencies = [
+    "alembic>=1.15.0",
+    "bcrypt>=4.0.0",
     "fastapi>=0.139.2",
+    "numpy>=2.0.0",
     "pyjwt>=2.8.0",
+    "python-dotenv>=1.0.0",
     "python-multipart>=0.0.32",
-    "torch==2.6.0+cu124",
-    "torchvision==0.21.0+cu124",
+    "slowapi>=0.1.9",
+    "sqlalchemy>=2.0.0",
+    "torch==2.6.0+cpu",
     "uvicorn[standard]>=0.51.0",
 ]
 
 [[tool.uv.index]]
-url = "https://download.pytorch.org/whl/cu124"
+url = "https://download.pytorch.org/whl/cpu"
 
 [[tool.uv.index]]
 url = "https://pypi.org/simple"
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.3.0",
+    "pytest>=9.1.1",
+    "ruff>=0.16.1",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008"]

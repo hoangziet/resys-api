@@ -9,5 +9,12 @@ services:
       - APP_NAME=MARS Recommender API
       - API_PREFIX=/api/v1
       - ENVIRONMENT=production
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - LEARNER_USERNAME=${LEARNER_USERNAME:-learner}
+      - LEARNER_PASSWORD=${LEARNER_PASSWORD}
       - MODEL_CHECKPOINT_PATH=models/checkpoints/bert4rec.pt
       - TEXT_EMBEDDINGS_PATH=models/sentence-camembert-base.pt
+      - SQLITE_PATH=${SQLITE_PATH:-data/db.sqlite3}
+    restart: unless-stopped
