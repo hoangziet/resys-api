@@ -38,8 +38,18 @@ def resolve_artifact_path(
 
 
 class TextItemEncoder(nn.Module):
-    def __init__(self, text_embeddings: torch.Tensor, hidden_dim: int):
+    def __init__(
+        self,
+        text_embeddings: torch.Tensor | None = None,
+        hidden_dim: int = 64,
+        *,
+        embeddings: torch.Tensor | None = None,
+    ):
         super().__init__()
+        if text_embeddings is None:
+            text_embeddings = embeddings
+        if text_embeddings is None:
+            raise ValueError("TextItemEncoder requires text embeddings")
         self.hidden_dim = hidden_dim
         self.register_buffer("text_emb", text_embeddings, persistent=False)
         self.text_proj = nn.Linear(text_embeddings.size(1), hidden_dim)
