@@ -21,7 +21,7 @@ import torch
 from torch import Tensor
 
 from core.config import settings
-from models.bert4recpy import BERT4Rec
+from models.bert4rec import BERT4Rec
 
 logger = logging.getLogger(__name__)
 Device = str | torch.device

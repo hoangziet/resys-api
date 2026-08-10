@@ -113,7 +113,7 @@ for k, v in sd.items():
 "
 ```
 
-**So sánh** output với model definition trong `models/bert4recpy.py` để đảm bảo khớp.
+**So sánh** output với model definition trong `models/bert4rec.py` để đảm bảo khớp.
 
 ---
 

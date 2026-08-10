@@ -26,7 +26,7 @@ resys-api/
 │   └── rate_limit.py         #   slowapi limiter instance
 │
 ├── models/                   # ML model & embeddings
-│   ├── bert4recpy.py         #   BERT4Rec model definition (PyTorch)
+│   ├── bert4rec.py           #   BERT4Rec model definition (PyTorch)
 │   ├── embeddings.py         #   ItemEmbeddings: similarity, search, serialize
 │   ├── sentence-camembert-base.pt  # Pre-computed text embeddings
 │   └── checkpoints/
@@ -77,7 +77,7 @@ Chứa các FastAPI router, mỗi file tương ứng một nhóm chức năng. M
 Lõi hệ thống — quản lý cấu hình, bảo mật, kết nối database, rate limiting. Không chứa logic business, chỉ cung cấp infrastructure cho `api/` sử dụng.
 
 ### `models/`
-Mô hình ML và dữ liệu embedding. `bert4recpy.py` định kiến trúc BERT4Rec. `embeddings.py` quản lý item embeddings để similarity search và serialize metadata cho API.
+Mô hình ML và dữ liệu embedding. `bert4rec.py` định kiến trúc BERT4Rec. `embeddings.py` quản lý item embeddings để similarity search và serialize metadata cho API.
 
 ### `assets/`
 Frontend tĩnh — HTML, CSS, JavaScript. FastAPI mount thư mục này tại `/assets` và phục vụ `index.html` tại route gốc `/`.

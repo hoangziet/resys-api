@@ -56,7 +56,7 @@ MARS Recommender API là hệ thống microservice đơn (monolithic API) phục
 
 ### Recommendation Service (`inference.py` + `models/`)
 - **inference.py** — Load checkpoint, infer hyperparams, predict, recommend
-- **models/bert4recpy.py** — BERT4Rec nn.Module + TextItemEncoder
+- **models/bert4rec.py** — BERT4Rec nn.Module + TextItemEncoder
 - **models/embeddings.py** — ItemEmbeddings: similarity search, serialize, search
 
 ### Data Layer (`data/`)
@@ -81,7 +81,7 @@ app.py
   └── core/database.py ─→ core/config.py
 
 inference.py
-  ├── models/bert4recpy.py (BERT4Rec, TextItemEncoder)
+  ├── models/bert4rec.py (BERT4Rec, TextItemEncoder)
   ├── core/config.py
   └── torch
 
