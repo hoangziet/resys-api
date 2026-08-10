@@ -1,19 +1,7 @@
-"""
-bert4recpy.py
-===============
-BERT4Rec — masked item prediction for sequential recommendation.
+"""Canonical BERT4Rec implementation and artifact path helpers.
 
-This lightweight API variant uses a local text embedding checkpoint saved at
-`models/sentence-camembert-base.pt` so it does not need
-to download a HuggingFace encoder at runtime.
-
-Architecture:
-    - Bidirectional Transformer encoder
-    - Input LayerNorm applied after embedding sum (before dropout), matching BERT paper
-    - Masked item modeling (15% random mask during training)
-    - MLM prediction head: Linear → GELU → LayerNorm (BERT-style)
-    - Weight-tied output projection with per-item bias
-    - Special mask_token = n_items + 1
+This module is the single source of truth for the recommendation model.
+Legacy modules keep thin compatibility imports so existing code keeps working.
 """
 
 from __future__ import annotations
@@ -24,7 +12,29 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-LOCAL_TEXT_EMBEDDINGS_PATH = Path("models/sentence-camembert-base.pt")
+REPO_ROOT = Path(__file__).resolve().parent.parent
+MODELS_DIR = Path(__file__).resolve().parent
+DEFAULT_TEXT_EMBEDDINGS_PATH = MODELS_DIR / "sentence-camembert-base.pt"
+DEFAULT_MODEL_CHECKPOINT_PATH = MODELS_DIR / "checkpoints" / "bert4rec.pt"
+LOCAL_TEXT_EMBEDDINGS_PATH = DEFAULT_TEXT_EMBEDDINGS_PATH
+
+
+def resolve_artifact_path(
+    path: str | Path | None = None,
+    *,
+    default_path: str | Path | None = None,
+) -> Path:
+    """Resolve an artifact path against the repo root with legacy fallback support."""
+    candidate = Path(path) if path is not None else (default_path or DEFAULT_TEXT_EMBEDDINGS_PATH)
+    if candidate.is_absolute():
+        return candidate
+
+    for base in (REPO_ROOT, Path.cwd()):
+        resolved = (base / candidate).resolve()
+        if resolved.exists():
+            return resolved
+
+    return (REPO_ROOT / candidate).resolve()
 
 
 class TextItemEncoder(nn.Module):
@@ -38,10 +48,10 @@ class TextItemEncoder(nn.Module):
 
     @classmethod
     def from_checkpoint(cls, hidden_dim: int, path: str | Path | None = None):
-        path = Path(path) if path is not None else LOCAL_TEXT_EMBEDDINGS_PATH
-        if not path.exists():
-            raise FileNotFoundError(f"Text embedding checkpoint not found: {path}")
-        text_embeddings = torch.load(path, map_location="cpu", weights_only=True)
+        resolved_path = resolve_artifact_path(path, default_path=DEFAULT_TEXT_EMBEDDINGS_PATH)
+        if not resolved_path.exists():
+            raise FileNotFoundError(f"Text embedding checkpoint not found: {resolved_path}")
+        text_embeddings = torch.load(resolved_path, map_location="cpu", weights_only=True)
         return cls(text_embeddings=text_embeddings, hidden_dim=hidden_dim)
 
     def forward(self, item_ids: torch.Tensor) -> torch.Tensor:
@@ -141,24 +151,18 @@ class BERT4Rec(nn.Module):
         pos_ids = torch.arange(L, device=input_seq.device).unsqueeze(0).expand(B, L)
         x = self._item_input_embedding(input_seq) + self.pos_embedding(pos_ids)
 
-        # ponytail: watch embeddings are a training-time augmentation only.
-        # At inference (watch_input_ids=None), the model runs on base item+position
-        # representations, analogous to how dropout is disabled at eval time.
         if self.watch_embedding is not None and watch_input_ids is not None:
             x = x + self.watch_embedding(watch_input_ids)
 
-        x = self.input_ln(x)  # LayerNorm before dropout (BERT convention)
+        x = self.input_ln(x)
         x = self.dropout(x)
 
         padding_mask = input_seq == self.pad_token
         x = self.transformer(x, src_key_padding_mask=padding_mask)
 
-        # MLM prediction head: transform hidden states before weight-tied projection
         x = F.gelu(self.pred_ffn(x))
         x = self.pred_ln(x)
 
-        # Output logits cover only padding (col 0) + real items (cols 1..n_items).
-        # The MASK token (index n_items+1) is an input-only token, not an output class.
         real_item_weight = self.item_embedding.weight[1 : self.n_items + 1]
         real_item_logits = F.linear(x, real_item_weight, self.out_bias)
 
@@ -200,3 +204,6 @@ class BERT4Rec(nn.Module):
 
 def get_model(n_items, **kwargs):
     return BERT4Rec(n_items=n_items, **kwargs)
+
+
+__all__ = ["BERT4Rec", "TextItemEncoder", "get_model", "resolve_artifact_path"]
