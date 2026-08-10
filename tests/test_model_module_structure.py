@@ -1,3 +1,5 @@
+import torch
+
 from models.bert4rec import BERT4Rec, TextItemEncoder, resolve_artifact_path
 
 

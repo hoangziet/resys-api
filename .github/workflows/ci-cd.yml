@@ -3,9 +3,11 @@ name: CI/CD
 on:
   pull_request:
     branches:
+      - main
       - develop
   push:
     branches:
+      - main
       - develop
 
 jobs:
@@ -63,7 +65,7 @@ jobs:
     name: Deploy to VPS
     runs-on: ubuntu-latest
     needs: docker-build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
     env:
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
