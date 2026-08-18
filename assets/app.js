@@ -26,6 +26,16 @@ const registerForm = document.getElementById("register-form");
 const goToRegister = document.getElementById("go-to-register");
 const goToLogin = document.getElementById("go-to-login");
 const logoutBtn = document.getElementById("btn-logout");
+
+// Auth tabs / theme toggle DOM
+const authTabs = document.getElementById("auth-tabs") || document.querySelector(".auth-tabs");
+const tabLoginBtn = document.getElementById("tab-login");
+const tabRegisterBtn = document.getElementById("tab-register");
+const authTitle = document.getElementById("auth-title");
+const authSubtitle = document.getElementById("auth-subtitle");
+const themeToggleSidebar = document.getElementById("theme-toggle");
+const themeToggleAuth = document.getElementById("theme-toggle-auth");
+const passwordStrengthLabel = document.getElementById("password-strength-label");
 const tabPanes = document.querySelectorAll(".tab-pane");
 const navItems = document.querySelectorAll(".nav-item");
 const tabTitle = document.getElementById("tab-title");
@@ -81,8 +91,38 @@ const drawerSimilar = document.getElementById("drawer-similar-courses");
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", () => {
   setupEventListeners();
+  initTheme();
   checkAuth();
 });
+
+// --- Theme (Light / Dark) ---
+function initTheme() {
+  // The inline script in <head> already applied the saved/preferred theme
+  // before first paint (avoids a flash). Here we just sync the toggle UI.
+  const current = document.documentElement.getAttribute("data-theme") || "dark";
+  updateThemeToggleUI(current);
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute("data-theme") || "dark";
+  const next = current === "light" ? "dark" : "light";
+  document.documentElement.setAttribute("data-theme", next);
+  try {
+    localStorage.setItem("theme", next);
+  } catch { /* storage unavailable — theme just won't persist */ }
+  updateThemeToggleUI(next);
+}
+
+function updateThemeToggleUI(theme) {
+  if (themeToggleSidebar) {
+    const label = themeToggleSidebar.querySelector("span");
+    if (label) label.textContent = theme === "light" ? "Dark mode" : "Light mode";
+  }
+  if (themeToggleAuth) {
+    const icon = themeToggleAuth.querySelector("i");
+    if (icon) icon.className = theme === "light" ? "fa-solid fa-moon" : "fa-solid fa-sun";
+  }
+}
 
 // --- Toast Helper ---
 function showToast(title, message, type = "success") {
@@ -99,18 +139,26 @@ function showToast(title, message, type = "success") {
       <div class="toast-title"></div>
       <div class="toast-message"></div>
     </div>
+    <button class="toast-close" aria-label="Dismiss notification"><i class="fa-solid fa-xmark"></i></button>
   `;
   toast.querySelector(".toast-title").textContent = title;
   toast.querySelector(".toast-message").textContent = message;
 
   toastContainer.appendChild(toast);
 
-  // Auto remove toast
-  setTimeout(() => {
+  const dismiss = () => {
     toast.style.transform = "translateY(-20px)";
     toast.style.opacity = "0";
     setTimeout(() => toast.remove(), 300);
-  }, 4000);
+  };
+
+  // Auto remove toast
+  const autoDismiss = setTimeout(dismiss, 4000);
+
+  toast.querySelector(".toast-close").addEventListener("click", () => {
+    clearTimeout(autoDismiss);
+    dismiss();
+  });
 }
 
 // --- Loading Helper ---
@@ -119,6 +167,22 @@ function toggleLoading(show) {
     loadingOverlay.classList.remove("hidden");
   } else {
     loadingOverlay.classList.add("hidden");
+  }
+}
+
+// --- Button Busy State (prevents accidental double submits) ---
+function setButtonBusy(btn, busy, busyText) {
+  if (!btn) return;
+  if (busy) {
+    btn.dataset.originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> ${busyText || "Please wait..."}`;
+  } else {
+    btn.disabled = false;
+    if (btn.dataset.originalHtml) {
+      btn.innerHTML = btn.dataset.originalHtml;
+      delete btn.dataset.originalHtml;
+    }
   }
 }
 
@@ -218,6 +282,58 @@ function logout() {
   detailDrawer.classList.add("hidden");
 }
 
+// --- Auth Screen: Login / Register Switch ---
+function switchAuthMode(mode) {
+  const isRegister = mode === "register";
+
+  loginForm.classList.toggle("hidden", isRegister);
+  registerForm.classList.toggle("hidden", !isRegister);
+
+  if (tabLoginBtn && tabRegisterBtn) {
+    tabLoginBtn.classList.toggle("active", !isRegister);
+    tabRegisterBtn.classList.toggle("active", isRegister);
+    tabLoginBtn.setAttribute("aria-selected", String(!isRegister));
+    tabRegisterBtn.setAttribute("aria-selected", String(isRegister));
+  }
+  if (authTabs) authTabs.classList.toggle("register-active", isRegister);
+
+  if (authTitle) authTitle.textContent = isRegister ? "Create your account" : "Welcome back";
+  if (authSubtitle) {
+    authSubtitle.textContent = isRegister
+      ? "Join MARS and start building your learning history"
+      : "Sign in to continue your learning path";
+  }
+}
+
+// --- Password Strength Hint (client-side, purely visual) ---
+function updatePasswordStrength(value) {
+  const bar = document.getElementById("password-strength")?.querySelector(".strength-bar");
+  if (!bar || !passwordStrengthLabel) return;
+
+  if (!value) {
+    bar.className = "strength-bar";
+    passwordStrengthLabel.textContent = "\u00a0";
+    return;
+  }
+
+  let score = 0;
+  if (value.length >= 6) score++;
+  if (value.length >= 10) score++;
+  if (/[0-9]/.test(value) && /[a-zA-Z]/.test(value)) score++;
+  if (/[^a-zA-Z0-9]/.test(value)) score++;
+
+  if (score <= 1) {
+    bar.className = "strength-bar weak";
+    passwordStrengthLabel.textContent = "Weak";
+  } else if (score <= 2) {
+    bar.className = "strength-bar medium";
+    passwordStrengthLabel.textContent = "Okay";
+  } else {
+    bar.className = "strength-bar strong";
+    passwordStrengthLabel.textContent = "Strong";
+  }
+}
+
 // --- Setup Event Listeners ---
 function setupEventListeners() {
   // Navigation Tabs Switch
@@ -229,25 +345,62 @@ function setupEventListeners() {
     });
   });
 
-  // Switch between Login and Register
+  // Switch between Login and Register (links inside the forms)
   goToRegister.addEventListener("click", (e) => {
     e.preventDefault();
-    loginForm.classList.add("hidden");
-    registerForm.classList.remove("hidden");
-    document.querySelector(".auth-header h1").textContent = "Create Account";
+    switchAuthMode("register");
   });
 
   goToLogin.addEventListener("click", (e) => {
     e.preventDefault();
-    registerForm.classList.add("hidden");
-    loginForm.classList.remove("hidden");
-    document.querySelector(".auth-header h1").textContent = "Welcome back";
+    switchAuthMode("login");
+  });
+
+  // Switch between Login and Register (segmented tabs)
+  if (tabLoginBtn) tabLoginBtn.addEventListener("click", () => switchAuthMode("login"));
+  if (tabRegisterBtn) tabRegisterBtn.addEventListener("click", () => switchAuthMode("register"));
+
+  // Theme toggle buttons
+  if (themeToggleSidebar) themeToggleSidebar.addEventListener("click", toggleTheme);
+  if (themeToggleAuth) themeToggleAuth.addEventListener("click", toggleTheme);
+
+  // Password visibility toggles (login + register)
+  document.querySelectorAll(".btn-toggle-password").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const targetId = btn.getAttribute("data-target");
+      const input = document.getElementById(targetId);
+      if (!input) return;
+      const icon = btn.querySelector("i");
+      const isHidden = input.type === "password";
+      input.type = isHidden ? "text" : "password";
+      if (icon) icon.className = isHidden ? "fa-regular fa-eye-slash" : "fa-regular fa-eye";
+      btn.setAttribute("aria-label", isHidden ? "Hide password" : "Show password");
+    });
+  });
+
+  // Live password strength hint on the register form
+  const registerPasswordInput = document.getElementById("register-password");
+  if (registerPasswordInput) {
+    registerPasswordInput.addEventListener("input", () => {
+      updatePasswordStrength(registerPasswordInput.value);
+    });
+  }
+
+  // Press Escape to quickly clear an active search
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && document.activeElement === searchInput && searchInput.value) {
+      searchInput.value = "";
+      searchClearBtn.classList.add("hidden");
+      runSearch();
+    }
   });
 
   // Forms Submissions
   loginForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     toggleLoading(true);
+    const submitBtn = loginForm.querySelector('button[type="submit"]');
+    setButtonBusy(submitBtn, true, "Signing in...");
     const username = document.getElementById("login-username").value.trim();
     const password = document.getElementById("login-password").value;
 
@@ -269,12 +422,15 @@ function setupEventListeners() {
       showToast("Login Failed", err.message, "error");
     } finally {
       toggleLoading(false);
+      setButtonBusy(submitBtn, false);
     }
   });
 
   registerForm.addEventListener("submit", async (e) => {
     e.preventDefault();
     toggleLoading(true);
+    const submitBtn = registerForm.querySelector('button[type="submit"]');
+    setButtonBusy(submitBtn, true, "Creating account...");
     const username = document.getElementById("register-username").value.trim();
     const password = document.getElementById("register-password").value;
 
@@ -296,6 +452,7 @@ function setupEventListeners() {
       showToast("Registration Failed", err.message, "error");
     } finally {
       toggleLoading(false);
+      setButtonBusy(submitBtn, false);
     }
   });
 
@@ -306,6 +463,12 @@ function setupEventListeners() {
   btnCloseDrawer.addEventListener("click", () => {
     drawerVideo.pause();
     detailDrawer.classList.add("hidden");
+    const currentTab = document
+      .querySelector(".nav-item.active")
+      ?.getAttribute("data-tab");
+    if (currentTab == "history") {
+      renderHistoryTimeline();
+    }
   });
 
   // Search input with Debounce
@@ -384,6 +547,7 @@ function setupEventListeners() {
     } finally {
       toggleLoading(false);
     }
+    renderHistoryTimeline();
   });
 
   // Admin Actions
@@ -594,6 +758,32 @@ function renderSkeletons(count) {
   return html;
 }
 
+// --- Category Visuals ---
+// Maps a course's theme/category to a cover gradient + icon so every card
+// has a distinct, recognizable look even before (or if) its real thumbnail
+// image loads. Purely a frontend presentation layer — no backend data shape
+// is changed, this just reads the existing `theme` field.
+const CATEGORY_VISUALS = [
+  { match: /web|html|css|javascript|react|front.?end|back.?end/i, icon: "fa-solid fa-code", cover: "cat-cover-1" },
+  { match: /data|sql|analytic|statistic|big data/i, icon: "fa-solid fa-chart-column", cover: "cat-cover-2" },
+  { match: /cloud|devops|kubernetes|docker|server|infra/i, icon: "fa-solid fa-cloud", cover: "cat-cover-3" },
+  { match: /design|ui|ux|graphic|photo|illustrat/i, icon: "fa-solid fa-palette", cover: "cat-cover-5" },
+  { match: /market|seo|communicat|business|vente|sales/i, icon: "fa-solid fa-bullhorn", cover: "cat-cover-6" },
+  { match: /security|s[ée]curit|cyber|reseau|network/i, icon: "fa-solid fa-shield-halved", cover: "cat-cover-8" },
+  { match: /mobile|android|ios|app/i, icon: "fa-solid fa-mobile-screen", cover: "cat-cover-4" },
+  { match: /ai|ia\b|machine learning|intelligence artificielle|deep learning/i, icon: "fa-solid fa-brain", cover: "cat-cover-7" },
+  { match: /manage|gestion|project|projet|leadership/i, icon: "fa-solid fa-diagram-project", cover: "cat-cover-2" },
+  { match: /office|bureautique|excel|word|powerpoint/i, icon: "fa-solid fa-file-lines", cover: "cat-cover-6" },
+  { match: /langue|language|anglais|english/i, icon: "fa-solid fa-language", cover: "cat-cover-4" },
+];
+const DEFAULT_CATEGORY_VISUAL = { icon: "fa-solid fa-book-open", cover: "cat-cover-7" };
+
+function getCategoryVisual(theme) {
+  if (!theme) return DEFAULT_CATEGORY_VISUAL;
+  const found = CATEGORY_VISUALS.find(v => v.match.test(theme));
+  return found || DEFAULT_CATEGORY_VISUAL;
+}
+
 // --- Course Cards Renderer ---
 function renderCourseCards(items, source) {
   if (!items || items.length === 0) {
@@ -604,13 +794,18 @@ function renderCourseCards(items, source) {
     const formattedDuration = formatDuration(item.duration);
     const isBert = source === "bert4rec_personalized" || source === "bert4rec";
     const scoreText = (item.score !== undefined && !isBert) ? `${Math.round(item.score * 100)}% Match` : "";
-
-
+    const categoryName = item.theme || "Tech";
+    const visual = getCategoryVisual(categoryName);
 
     return `
       <div class="card" onclick="openCourseDetail(${item.item_idx})">
         <div class="card-img-wrapper">
-          <img src="${escapeHtml(item.thumbnail_url)}" alt="${escapeHtml(item.title)}" />
+          <div class="card-cat-cover ${visual.cover}"><i class="${visual.icon}"></i></div>
+          <div class="card-cat-chip" title="${escapeHtml(categoryName)}">
+            <i class="${visual.icon}"></i><span>${escapeHtml(categoryName)}</span>
+          </div>
+          <img src="${escapeHtml(item.thumbnail_url)}" alt="${escapeHtml(item.title)}" loading="lazy"
+            onerror="this.classList.add('img-error')" />
           ${scoreText ? `<div class="card-score-badge">${escapeHtml(scoreText)}</div>` : ""}
         </div>
         <div class="card-body">
@@ -623,7 +818,7 @@ function renderCourseCards(items, source) {
         </div>
         <div class="card-footer">
           <div class="card-footer-tags">
-            <span class="badge badge-light-blue">${escapeHtml(item.theme || "Tech")}</span>
+            <span class="badge badge-light-blue">${escapeHtml(categoryName)}</span>
           </div>
           <div class="card-duration">
             <i class="fa-regular fa-clock"></i> ${escapeHtml(formattedDuration)}
@@ -915,3 +1110,109 @@ function renderLatencyChart() {
     `;
   }).join("");
 }
+
+/* ======================================================================
+ * MOBILE SIDEBAR TOGGLE  (Pure UI — no backend logic touched)
+ * Injects a hamburger button and handles slide-out sidebar on mobile.
+ * ====================================================================== */
+function initMobileSidebar() {
+  const sidebar = document.querySelector('.sidebar');
+  if (!sidebar) return;
+
+  const overlay = document.createElement('div');
+  overlay.className = 'sidebar-overlay';
+
+  const dashboardScreen = document.querySelector('#dashboard-screen');
+
+  if (dashboardScreen) {
+    dashboardScreen.appendChild(overlay);
+  } else {
+    document.body.appendChild(overlay);
+  }
+
+
+  const hamburger = document.createElement('button');
+  hamburger.className = 'mobile-menu-btn';
+  hamburger.setAttribute('aria-label', 'Toggle navigation menu');
+  hamburger.innerHTML = '<i class="fa-solid fa-bars"></i>';
+
+  const topbar = document.querySelector('.topbar');
+  if (topbar) {
+    const h1 = topbar.querySelector('h1');
+    if (h1 && !topbar.querySelector('.topbar-title-area')) {
+      const titleArea = document.createElement('div');
+      titleArea.className = 'topbar-title-area';
+      h1.parentNode.insertBefore(titleArea, h1);
+      titleArea.appendChild(h1);
+    }
+    const titleArea = topbar.querySelector('.topbar-title-area');
+    if (titleArea) {
+      titleArea.insertBefore(hamburger, titleArea.firstChild);
+    } else {
+      topbar.insertBefore(hamburger, topbar.firstChild);
+    }
+  }
+
+  const statusIndicator = topbar?.querySelector('.status-indicator');
+  if (statusIndicator && !topbar.querySelector('.topbar-right')) {
+    const rightGroup = document.createElement('div');
+    rightGroup.className = 'topbar-right';
+    statusIndicator.parentNode.insertBefore(rightGroup, statusIndicator);
+    rightGroup.appendChild(statusIndicator);
+  }
+
+  function openSidebar() {
+    sidebar.classList.add('mobile-open');
+    overlay.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    hamburger.innerHTML = '<i class="fa-solid fa-xmark"></i>';
+  }
+
+  function closeSidebar() {
+    sidebar.classList.remove('mobile-open');
+    overlay.classList.remove('active');
+    document.body.style.overflow = '';
+    hamburger.innerHTML = '<i class="fa-solid fa-bars"></i>';
+  }
+
+  hamburger.addEventListener('click', () => {
+    if (sidebar.classList.contains('mobile-open')) {
+      closeSidebar();
+    } else {
+      openSidebar();
+    }
+  });
+
+  overlay.addEventListener('click', closeSidebar);
+
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.addEventListener('click', () => {
+      if (window.innerWidth <= 768 && sidebar.classList.contains('mobile-open')) {
+        closeSidebar();
+      }
+    });
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && sidebar.classList.contains('mobile-open')) {
+      closeSidebar();
+    }
+  });
+
+  let resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      if (window.innerWidth > 768 && sidebar.classList.contains('mobile-open')) {
+        closeSidebar();
+      }
+    }, 150);
+  });
+}
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  requestAnimationFrame(() => {
+    initMobileSidebar();
+  });
+});

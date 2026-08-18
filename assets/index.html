@@ -15,6 +15,16 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   <!-- Custom Stylesheet -->
   <link rel="stylesheet" href="/assets/style.css" />
+  <!-- Apply saved theme before paint to avoid a light/dark flash -->
+  <script>
+    (function () {
+      try {
+        var saved = localStorage.getItem("theme");
+        var theme = saved || (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+        document.documentElement.setAttribute("data-theme", theme);
+      } catch (e) { }
+    })();
+  </script>
 </head>
 
 <body>
@@ -31,53 +41,99 @@
   <div id="app">
     <!-- AUTHENTICATION SCREEN -->
     <div id="auth-screen" class="auth-container">
-      <div class="auth-card">
-        <div class="auth-header">
+      <button id="theme-toggle-auth" class="theme-toggle-btn" type="button" title="Switch theme"
+        aria-label="Switch theme">
+        <i class="fa-solid fa-moon"></i>
+      </button>
+
+      <div class="auth-shell">
+        <!-- Brand / Showcase Panel -->
+        <div class="auth-showcase">
           <div class="logo">
             <i class="fa-solid fa-graduation-cap logo-icon"></i>
             <span>MARS RecSys</span>
           </div>
-          <h1>Welcome back</h1>
-          <p>Explore your personalized learning path</p>
+          <h2>Learn smarter, not harder.</h2>
+          <p>An adaptive course recommender that follows your progress and surfaces exactly what to study next.</p>
+
+          <ul class="auth-feature-list">
+            <li><i class="fa-solid fa-wand-magic-sparkles"></i>Personalized picks powered by BERT4Rec</li>
+            <li><i class="fa-solid fa-layer-group"></i> Thousands of courses, organized by category</li>
+            <li><i class="fa-solid fa-chart-line"></i> Your learning history shapes every recommendation</li>
+          </ul>
+
+          <div class="auth-showcase-glow"></div>
         </div>
 
-        <!-- Login Form -->
-        <form id="login-form" class="auth-form">
-          <div class="form-group">
-            <label for="login-username"><i class="fa-regular fa-user"></i> Username</label>
-            <input type="text" id="login-username" placeholder="e.g. learner" required autocomplete="username" />
+        <!-- Form Panel -->
+        <div class="auth-card">
+          <div class="auth-header">
+            <div class="logo logo-mobile">
+              <i class="fa-solid fa-graduation-cap logo-icon"></i>
+              <span>MARS RecSys</span>
+            </div>
+            <h1 id="auth-title">Welcome back</h1>
+            <p id="auth-subtitle">Sign in to continue your learning path</p>
           </div>
-          <div class="form-group">
-            <label for="login-password"><i class="fa-regular fa-key"></i> Password</label>
-            <input type="password" id="login-password" placeholder="••••••••" required
-              autocomplete="current-password" />
-          </div>
-          <button type="submit" class="btn btn-primary btn-block">Sign In</button>
-          <p class="auth-switch">Don't have an account? <a href="#" id="go-to-register">Register here</a></p>
-        </form>
 
-        <!-- Register Form -->
-        <form id="register-form" class="auth-form hidden">
-          <div class="form-group">
-            <label for="register-username"><i class="fa-regular fa-user"></i> Username</label>
-            <input type="text" id="register-username" placeholder="Choose a username" required
-              autocomplete="username" />
+          <!-- Login / Register Tabs -->
+          <div class="auth-tabs" role="tablist">
+            <button type="button" id="tab-login" class="auth-tab active" role="tab" aria-selected="true">Sign
+              In</button>
+            <button type="button" id="tab-register" class="auth-tab" role="tab" aria-selected="false">Register</button>
+            <span class="auth-tab-indicator"></span>
           </div>
-          <div class="form-group">
-            <label for="register-password"><i class="fa-regular fa-key"></i> Password</label>
-            <input type="password" id="register-password" placeholder="Create a password" required
-              autocomplete="new-password" />
-          </div>
-          <button type="submit" class="btn btn-success btn-block">Create Account</button>
-          <p class="auth-switch">Already have an account? <a href="#" id="go-to-login">Log in here</a></p>
-        </form>
 
-        <div class="auth-hints">
-          <p><i class="fa-solid fa-circle-info"></i> Demo accounts:</p>
-          <ul>
-            <li>Learner: <code>learner</code> / <code>Learner123</code></li>
-            <li>Admin: <code>admin</code> / <code>Admin123</code></li>
-          </ul>
+          <!-- Login Form -->
+          <form id="login-form" class="auth-form">
+            <div class="form-group">
+              <label for="login-username"><i class="fa-regular fa-user"></i> Username</label>
+              <input type="text" id="login-username" placeholder="e.g. learner" required autocomplete="username" />
+            </div>
+            <div class="form-group">
+              <label for="login-password"><i class="fa-solid fa-lock"></i> Password</label>
+              <div class="password-input-wrapper">
+                <input type="password" id="login-password" placeholder="••••••••" required
+                  autocomplete="current-password" />
+                <button type="button" class="btn-toggle-password" data-target="login-password" tabindex="-1"
+                  aria-label="Show password">
+                  <i class="fa-regular fa-eye"></i>
+                </button>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">
+              <i class="fa-solid fa-right-to-bracket"></i> Sign In
+            </button>
+            <p class="auth-switch">Don't have an account? <a href="#" id="go-to-register">Register here</a></p>
+          </form>
+
+          <!-- Register Form -->
+          <form id="register-form" class="auth-form hidden">
+            <div class="form-group">
+              <label for="register-username"><i class="fa-regular fa-user"></i> Username</label>
+              <input type="text" id="register-username" placeholder="Choose a username" required minlength="3"
+                autocomplete="username" />
+            </div>
+            <div class="form-group">
+              <label for="register-password"><i class="fa-solid fa-lock"></i> Password</label>
+              <div class="password-input-wrapper">
+                <input type="password" id="register-password" placeholder="At least 6 characters" required minlength="6"
+                  autocomplete="new-password" />
+                <button type="button" class="btn-toggle-password" data-target="register-password" tabindex="-1"
+                  aria-label="Show password">
+                  <i class="fa-regular fa-eye"></i>
+                </button>
+              </div>
+              <div class="password-strength" id="password-strength">
+                <span class="strength-bar"><i></i></span>
+                <span class="strength-label" id="password-strength-label">&nbsp;</span>
+              </div>
+            </div>
+            <button type="submit" class="btn btn-success btn-block">
+              <i class="fa-solid fa-user-plus"></i> Create Account
+            </button>
+            <p class="auth-switch">Already have an account? <a href="#" id="go-to-login">Log in here</a></p>
+          </form>
         </div>
       </div>
     </div>
@@ -120,6 +176,12 @@
               <span id="user-role-badge" class="badge">Learner</span>
             </div>
           </div>
+          <button id="theme-toggle" class="theme-toggle-switch" type="button" title="Switch theme"
+            aria-label="Switch light/dark theme">
+            <i class="fa-solid fa-sun"></i>
+            <span>Light mode</span>
+            <i class="fa-solid fa-moon"></i>
+          </button>
           <button id="btn-logout" class="btn btn-logout">
             <i class="fa-solid fa-arrow-right-from-bracket"></i> Logout
           </button>
