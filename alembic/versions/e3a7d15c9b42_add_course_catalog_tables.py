@@ -48,12 +48,15 @@ def upgrade() -> None:
         op.create_table(
             "courses",
             sa.Column(
-                        "item_idx",
-                        sa.Integer,
-                        primary_key=True,
-                        autoincrement=False,
-                        nullable=False,
-                    ),
+                "item_idx",
+                sa.Integer,
+                primary_key=True,
+                autoincrement=False,
+                # nullable=True keeps this a bare SQLite rowid alias, matching the raw
+                # DDL in core/database.py, so `alembic check` sees no drift whichever
+                # path created the table. See the note in core/schema.py.
+                nullable=True,
+            ),
             sa.Column("item_id", sa.Text, nullable=True),
             sa.Column("title", sa.Text, nullable=False),
             sa.Column("description", sa.Text, nullable=True),
@@ -76,7 +79,7 @@ def upgrade() -> None:
                 sa.ForeignKey("courses.item_idx", ondelete="CASCADE"),
                 primary_key=True,
                 autoincrement=False,
-                nullable=False,
+                nullable=True,
             ),
             sa.Column("item_id", sa.Text, nullable=True),
             sa.Column("title", sa.Text, nullable=False),

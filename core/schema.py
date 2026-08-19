@@ -4,10 +4,17 @@ import sqlalchemy as sa
 
 metadata = sa.MetaData()
 
+# Single-column INTEGER PRIMARY KEY columns are declared nullable=True on purpose.
+# In SQLite such a column is a rowid alias, and core/database.py creates these
+# tables with raw DDL that omits an explicit NOT NULL, so PRAGMA table_info reports
+# notnull=0 and SQLAlchemy reflects the column as nullable. primary_key=True alone
+# would imply nullable=False here and make `alembic check` (CI: ci-cd.yml) fail with
+# a modify_nullable drift that no migration can resolve. Do not "tidy" these away.
+
 users = sa.Table(
     "users",
     metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True, nullable=True),
     sa.Column("username", sa.Text, unique=True, nullable=False),
     sa.Column("password_hash", sa.Text, nullable=False),
     sa.Column("role", sa.Text, nullable=False, server_default="learner"),
@@ -31,7 +38,7 @@ user_history = sa.Table(
 courses = sa.Table(
     "courses",
     metadata,
-    sa.Column("item_idx", sa.Integer, primary_key=True, autoincrement=False, nullable=False),
+    sa.Column("item_idx", sa.Integer, primary_key=True, autoincrement=False, nullable=True),
     sa.Column("item_id", sa.Text, nullable=True),
     sa.Column("title", sa.Text, nullable=False),
     sa.Column("description", sa.Text, nullable=True),
@@ -54,7 +61,7 @@ courses_en = sa.Table(
         sa.ForeignKey("courses.item_idx", ondelete="CASCADE"),
         primary_key=True,
         autoincrement=False,
-        nullable=False,
+        nullable=True,
     ),
     sa.Column("item_id", sa.Text, nullable=True),
     sa.Column("title", sa.Text, nullable=False),
@@ -73,7 +80,7 @@ courses_en = sa.Table(
 recommendation_logs = sa.Table(
     "recommendation_logs",
     metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True, nullable=True),
     sa.Column("timestamp", sa.DateTime, server_default=sa.func.current_timestamp()),
     sa.Column("username", sa.Text, nullable=True),
     sa.Column("strategy", sa.Text, nullable=False),
