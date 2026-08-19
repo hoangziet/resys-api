@@ -3,10 +3,10 @@ from __future__ import annotations
 import math
 import sqlite3
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch
 
 from app import create_app
 from core import database
