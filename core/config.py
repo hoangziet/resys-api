@@ -55,6 +55,12 @@ class Settings:
     text_embeddings_path: Path = Path(
         os.getenv("TEXT_EMBEDDINGS_PATH", "models/sentence-camembert-base.pt")
     )
+    courses_csv_fr: Path = Path(
+        os.getenv("COURSES_CSV_FR", "data/processed/item_features/item_metadata.csv")
+    )
+    courses_csv_en: Path = Path(
+        os.getenv("COURSES_CSV_EN", "data/processed/item_features/item_en_final.csv")
+    )
     environment: str = os.getenv("ENVIRONMENT", "development")
     jwt_secret_key: str = os.getenv("JWT_SECRET_KEY", "")
     jwt_algorithm: str = os.getenv("JWT_ALGORITHM", "HS256")

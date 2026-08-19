@@ -19,6 +19,7 @@ from api.recommendations import router as recommendations_router
 from core import database
 from core.config import settings
 from core.rate_limit import limiter
+from models.catalog import catalog
 
 
 class CacheControlMiddleware(BaseHTTPMiddleware):
@@ -31,6 +32,9 @@ class CacheControlMiddleware(BaseHTTPMiddleware):
 
 def create_app() -> FastAPI:
     database.init_db()
+
+    # Load the localized course catalog from SQLite (display layer)
+    catalog.load()
 
     # Pre-load recommendation model at startup
     from api.recommendations import load_recommendation_model

@@ -8,11 +8,13 @@ import time
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from api.deps import Lang, get_lang
 from core import database
 from core.config import settings
 from core.rate_limit import limiter
 from core.security import verify_token
 from inference import load_model, predict
+from models.catalog import catalog
 from models.embeddings import item_embeddings
 
 logger = logging.getLogger(__name__)
@@ -49,10 +51,13 @@ def load_recommendation_model():
 @router.post("/popular")
 @limiter.limit("5/second")
 def popular_courses(
-    request: Request, body: RecommenderRequest, token_data=Depends(verify_token)
+    request: Request,
+    body: RecommenderRequest,
+    lang: Lang = Depends(get_lang),
+    token_data=Depends(verify_token),
 ) -> dict:
     start_time = time.perf_counter()
-    items = item_embeddings.get_popular_items(limit=body.limit)
+    items = catalog.get_popular_items(limit=body.limit, lang=lang)
     latency_ms = (time.perf_counter() - start_time) * 1000
 
     database.log_recommendation(
@@ -67,6 +72,7 @@ def popular_courses(
         "source": "popular",
         "items": items,
         "limit": body.limit,
+        "lang": lang,
         "latency_ms": latency_ms,
     }
 
@@ -74,7 +80,10 @@ def popular_courses(
 @router.post("/for-you")
 @limiter.limit("5/second")
 def for_you(
-    request: Request, body: RecommenderRequest, token_data=Depends(verify_token)
+    request: Request,
+    body: RecommenderRequest,
+    lang: Lang = Depends(get_lang),
+    token_data=Depends(verify_token),
 ) -> dict:
     start_time = time.perf_counter()
 
@@ -87,6 +96,7 @@ def for_you(
             "source": "bert4rec",
             "items": [],
             "limit": body.limit,
+            "lang": lang,
             "latency_ms": 0.0,
         }
 
@@ -110,13 +120,13 @@ def for_you(
         )
 
         items = [
-            item_embeddings.serialize_item(item_idx) | {"score": prob}
+            catalog.serialize_item(item_idx, lang=lang) | {"score": prob}
             for (item_idx, _), prob in zip(top_items, probs, strict=True)
         ]
         strategy = "bert4rec_personalized"
     except Exception:
         logger.exception("BERT4Rec inference failed, falling back to popular")
-        items = item_embeddings.get_popular_items(limit=body.limit)
+        items = catalog.get_popular_items(limit=body.limit, lang=lang)
         strategy = "popular_fallback_error"
 
     latency_ms = (time.perf_counter() - start_time) * 1000
@@ -132,6 +142,7 @@ def for_you(
         "source": strategy,
         "items": items,
         "limit": body.limit,
+        "lang": lang,
         "latency_ms": latency_ms,
     }
 
@@ -139,7 +150,10 @@ def for_you(
 @router.post("/you-may-also-like")
 @limiter.limit("5/second")
 def you_may_also_like(
-    request: Request, body: RecommenderRequest, token_data=Depends(verify_token)
+    request: Request,
+    body: RecommenderRequest,
+    lang: Lang = Depends(get_lang),
+    token_data=Depends(verify_token),
 ) -> dict:
     start_time = time.perf_counter()
 
@@ -152,6 +166,7 @@ def you_may_also_like(
             "source": "vector_similarity",
             "items": [],
             "limit": body.limit,
+            "lang": lang,
             "latency_ms": 0.0,
         }
 
@@ -159,7 +174,7 @@ def you_may_also_like(
     try:
         recommendations = item_embeddings.similar_items(anchor_idx, top_k=body.limit)
         items = [
-            item_embeddings.serialize_item(item_idx) | {"score": score}
+            catalog.serialize_item(item_idx, lang=lang) | {"score": score}
             for item_idx, score in recommendations
         ]
         strategy = "vector_similarity"
@@ -168,7 +183,7 @@ def you_may_also_like(
             "Vector similarity failed for anchor=%d, falling back to popular",
             anchor_idx,
         )
-        items = item_embeddings.get_popular_items(limit=body.limit)
+        items = catalog.get_popular_items(limit=body.limit, lang=lang)
         strategy = "popular_fallback_error"
 
     latency_ms = (time.perf_counter() - start_time) * 1000
@@ -185,6 +200,7 @@ def you_may_also_like(
         "anchor_item_idx": anchor_idx,
         "items": items,
         "limit": body.limit,
+        "lang": lang,
         "latency_ms": latency_ms,
     }
 
@@ -195,6 +211,7 @@ def similar_courses(
     request: Request,
     course_id: int,
     body: SimilarityRequest,
+    lang: Lang = Depends(get_lang),
     token_data=Depends(verify_token),
 ) -> dict:
     start_time = time.perf_counter()
@@ -206,7 +223,7 @@ def similar_courses(
     try:
         recommendations = item_embeddings.similar_items(course_id, top_k=body.limit)
         items = [
-            item_embeddings.serialize_item(item_idx) | {"score": score}
+            catalog.serialize_item(item_idx, lang=lang) | {"score": score}
             for item_idx, score in recommendations
         ]
         strategy = "vector_similarity"
@@ -214,7 +231,7 @@ def similar_courses(
         logger.exception(
             "Vector similarity failed for course=%d, falling back to popular", course_id
         )
-        items = item_embeddings.get_popular_items(limit=body.limit)
+        items = catalog.get_popular_items(limit=body.limit, lang=lang)
         strategy = "popular_fallback_error"
 
     latency_ms = (time.perf_counter() - start_time) * 1000
@@ -231,5 +248,6 @@ def similar_courses(
         "course_id": course_id,
         "items": items,
         "limit": body.limit,
+        "lang": lang,
         "latency_ms": latency_ms,
     }

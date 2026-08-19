@@ -28,6 +28,47 @@ user_history = sa.Table(
     sa.PrimaryKeyConstraint("user_id", "item_idx"),
 )
 
+courses = sa.Table(
+    "courses",
+    metadata,
+    sa.Column("item_idx", sa.Integer, primary_key=True, autoincrement=False),
+    sa.Column("item_id", sa.Text, nullable=True),
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("description", sa.Text, nullable=True),
+    sa.Column("text", sa.Text, nullable=True),
+    sa.Column("language", sa.Text, nullable=True, server_default="fr"),
+    sa.Column("difficulty", sa.Text, nullable=True),
+    sa.Column("theme", sa.Text, nullable=True),
+    sa.Column("software", sa.Text, nullable=True),
+    sa.Column("job", sa.Text, nullable=True),
+    sa.Column("type", sa.Text, nullable=True),
+    sa.Column("duration", sa.REAL, nullable=True),
+)
+
+courses_en = sa.Table(
+    "courses_en",
+    metadata,
+    sa.Column(
+        "item_idx",
+        sa.Integer,
+        sa.ForeignKey("courses.item_idx", ondelete="CASCADE"),
+        primary_key=True,
+        autoincrement=False,
+    ),
+    sa.Column("item_id", sa.Text, nullable=True),
+    sa.Column("title", sa.Text, nullable=False),
+    sa.Column("description", sa.Text, nullable=True),
+    sa.Column("text", sa.Text, nullable=True),
+    sa.Column("language", sa.Text, nullable=True, server_default="en"),
+    sa.Column("difficulty", sa.Text, nullable=True),
+    sa.Column("theme", sa.Text, nullable=True),
+    sa.Column("software", sa.Text, nullable=True),
+    sa.Column("job", sa.Text, nullable=True),
+    sa.Column("type", sa.Text, nullable=True),
+    sa.Column("duration", sa.REAL, nullable=True),
+    sa.Column("thumbnail_path", sa.Text, nullable=True),
+)
+
 recommendation_logs = sa.Table(
     "recommendation_logs",
     metadata,

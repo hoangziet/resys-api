@@ -12,11 +12,19 @@ const state = {
   token: localStorage.getItem("auth_token") || null,
   username: localStorage.getItem("username") || null,
   role: localStorage.getItem("user_role") || null,
+  lang: localStorage.getItem("display_lang") === "fr" ? "fr" : "en",
   history: [],
   logs: [],
   currentTab: "dashboard",
   openCourse: null
 };
+
+// Appends the display-language switch to endpoints that return course content.
+// Only affects the text shown: the API always selects and ranks courses from the
+// French catalog the recommender was trained on.
+function withLang(endpoint) {
+  return `${endpoint}${endpoint.includes("?") ? "&" : "?"}lang=${state.lang}`;
+}
 
 // --- DOM Selector Constants ---
 const authScreen = document.getElementById("auth-screen");
@@ -495,8 +503,20 @@ function setupEventListeners() {
   });
 
   // Filters select
-  [filterDifficulty, filterLanguage, filterType].forEach(el => {
+  [filterDifficulty, filterType].forEach(el => {
     el.addEventListener("change", runSearch);
+  });
+
+  // Display language: server-side switch, so everything showing course text
+  // has to be refetched (state.history holds item_idx only, so it is unaffected).
+  filterLanguage.value = state.lang;
+  filterLanguage.addEventListener("change", async () => {
+    state.lang = filterLanguage.value === "fr" ? "fr" : "en";
+    localStorage.setItem("display_lang", state.lang);
+    clearRecoCache();
+    runSearch();
+    await loadRecommendations();
+    await renderHistoryTimeline();
   });
 
   // Toggle Learn button in drawer
@@ -668,6 +688,13 @@ function isRecoCacheValid(cache) {
   return cache && (Date.now() - cache.ts) < RECO_CACHE_TTL_MS;
 }
 
+function clearRecoCache() {
+  // The cache holds serialized course text, so it is language-specific.
+  try {
+    localStorage.removeItem(RECO_CACHE_KEY);
+  } catch { /* ignore */ }
+}
+
 // --- Load Recommendations ---
 async function loadRecommendations() {
   // Show Skeletons
@@ -680,7 +707,7 @@ async function loadRecommendations() {
   let hitRateLimit = false;
 
   try {
-    forYouRes = await apiRequest("/recommendations/for-you", "POST", { limit: 10 });
+    forYouRes = await apiRequest(withLang("/recommendations/for-you"), "POST", { limit: 10 });
   } catch (err) {
     if (err.message?.includes("429") || err.message?.includes("Rate limit")) {
       hitRateLimit = true;
@@ -688,7 +715,7 @@ async function loadRecommendations() {
   }
 
   try {
-    youMayRes = await apiRequest("/recommendations/you-may-also-like", "POST", { limit: 10 });
+    youMayRes = await apiRequest(withLang("/recommendations/you-may-also-like"), "POST", { limit: 10 });
   } catch (err) {
     if (err.message?.includes("429") || err.message?.includes("Rate limit")) {
       hitRateLimit = true;
@@ -696,7 +723,7 @@ async function loadRecommendations() {
   }
 
   try {
-    popularRes = await apiRequest("/recommendations/popular", "POST", { limit: 10 });
+    popularRes = await apiRequest(withLang("/recommendations/popular"), "POST", { limit: 10 });
   } catch (err) {
     if (err.message?.includes("429") || err.message?.includes("Rate limit")) {
       hitRateLimit = true;
@@ -737,7 +764,7 @@ async function loadRecommendations() {
 
 // --- Load History ---
 async function loadHistory() {
-  const data = await apiRequest("/history/", "GET");
+  const data = await apiRequest(withLang("/history/"), "GET");
   state.history = data.history.map(item => item.item_idx);
   statHistoryCount.textContent = state.history.length;
 }
@@ -847,27 +874,34 @@ function formatDuration(sec) {
 }
 
 // --- Search Engine ---
+// Course `type` values are translated between catalogs, so the filter maps a
+// canonical option value onto every spelling the API may return.
+const TYPE_ALIASES = {
+  tutorial: ["tutorial", "tutoriel"],
+  webcast: ["webcast"]
+};
+
 async function runSearch() {
   searchResultsGrid.innerHTML = renderSkeletons(8);
   const q = searchInput.value.trim();
 
   try {
-    const res = await apiRequest(`/courses/?q=${encodeURIComponent(q)}`, "GET");
+    const res = await apiRequest(withLang(`/courses/?q=${encodeURIComponent(q)}`), "GET");
     let courses = res.data;
 
     // Apply front-end filtering
     const difficultyVal = filterDifficulty.value;
-    const languageVal = filterLanguage.value;
     const typeVal = filterType.value;
 
     if (difficultyVal) {
-      courses = courses.filter(c => c.difficulty && c.difficulty.toLowerCase().includes(difficultyVal.toLowerCase()));
-    }
-    if (languageVal) {
-      courses = courses.filter(c => c.language === languageVal);
+      // Difficulty is stored as "<level> - <label>" in both languages
+      // ("1 - Découverte" / "1 - Beginner"), so match on the level prefix.
+      courses = courses.filter(c => c.difficulty && c.difficulty.trim().startsWith(difficultyVal));
     }
     if (typeVal) {
-      courses = courses.filter(c => c.type === typeVal);
+      // `type` is translated ("tutoriel" in fr, "tutorial" in en), so accept both.
+      const accepted = TYPE_ALIASES[typeVal] || [typeVal];
+      courses = courses.filter(c => c.type && accepted.includes(c.type.trim().toLowerCase()));
     }
 
     searchCount.textContent = `Showing ${courses.length} courses`;
@@ -893,7 +927,7 @@ async function runSearch() {
 async function renderHistoryTimeline() {
   toggleLoading(true);
   try {
-    const data = await apiRequest("/history/", "GET");
+    const data = await apiRequest(withLang("/history/"), "GET");
     const history = data.history;
     statHistoryCount.textContent = history.length;
 
@@ -956,7 +990,7 @@ window.openCourseDetail = async function (item_idx) {
   drawerVideo.pause();
 
   try {
-    const course = await apiRequest(`/courses/${item_idx}`, "GET");
+    const course = await apiRequest(withLang(`/courses/${item_idx}`), "GET");
     state.openCourse = course;
 
     // Set text contents
@@ -983,7 +1017,7 @@ window.openCourseDetail = async function (item_idx) {
     drawerSimilar.innerHTML = `<div class="spinner" style="width: 24px; height: 24px; border-width: 2px; margin: 20px auto;"></div>`;
     detailDrawer.classList.remove("hidden");
 
-    const similarRes = await apiRequest(`/recommendations/similar/${course.item_idx}`, "POST", { limit: 4 });
+    const similarRes = await apiRequest(withLang(`/recommendations/similar/${course.item_idx}`), "POST", { limit: 4 });
     renderSimilarItems(similarRes.items);
 
   } catch (err) {

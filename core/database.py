@@ -7,6 +7,7 @@ from collections.abc import Generator
 
 import bcrypt
 
+from core.catalog_seed import fetch_courses, seed_courses
 from core.config import settings
 
 log = logging.getLogger(__name__)
@@ -86,6 +87,42 @@ def init_db():
     """)
 
     cursor.execute("""
+    CREATE TABLE IF NOT EXISTS courses (
+        item_idx INTEGER PRIMARY KEY,
+        item_id TEXT,
+        title TEXT NOT NULL,
+        description TEXT,
+        text TEXT,
+        language TEXT DEFAULT 'fr',
+        difficulty TEXT,
+        theme TEXT,
+        software TEXT,
+        job TEXT,
+        type TEXT,
+        duration REAL
+    );
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS courses_en (
+        item_idx INTEGER PRIMARY KEY,
+        item_id TEXT,
+        title TEXT NOT NULL,
+        description TEXT,
+        text TEXT,
+        language TEXT DEFAULT 'en',
+        difficulty TEXT,
+        theme TEXT,
+        software TEXT,
+        job TEXT,
+        type TEXT,
+        duration REAL,
+        thumbnail_path TEXT,
+        FOREIGN KEY (item_idx) REFERENCES courses(item_idx) ON DELETE CASCADE
+    );
+    """)
+
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS recommendation_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -109,6 +146,9 @@ def init_db():
     conn.commit()
 
     _ensure_sqlite_columns(cursor)
+    conn.commit()
+
+    seed_courses(cursor)
     conn.commit()
 
     _ensure_seed_user(
@@ -212,6 +252,22 @@ def create_user(username: str, password_hash: str, role: str = "learner") -> boo
             return True
         except sqlite3.IntegrityError:
             return False
+
+
+def get_courses(lang: str = "en") -> list[dict]:
+    """Read the full localized catalog for the in-memory display cache.
+
+    ``lang="en"`` reads ``courses_en`` (English text plus ``thumbnail_path``),
+    anything else reads the French ``courses`` table.
+    """
+    table = "courses_en" if lang == "en" else "courses"
+    with connection() as conn:
+        cursor = conn.cursor()
+        try:
+            return [dict(row) for row in fetch_courses(cursor, table)]
+        except sqlite3.Error:
+            log.exception("Failed to read catalog table %s", table)
+            return []
 
 
 def get_user_history(username: str) -> list[int]:

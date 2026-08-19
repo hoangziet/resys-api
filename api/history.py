@@ -2,23 +2,26 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from api.deps import Lang, get_lang
 from core import database
 from core.security import verify_token
+from models.catalog import catalog
 from models.embeddings import item_embeddings
 
 router = APIRouter(prefix="/history", tags=["history"])
 
 
 @router.get("/")
-def get_history(token_data=Depends(verify_token)) -> dict:
+def get_history(
+    lang: Lang = Depends(get_lang), token_data=Depends(verify_token)
+) -> dict:
     history_idxs = database.get_user_history(token_data.username)
-    serialized_history = []
-    for idx in history_idxs:
-        try:
-            serialized_history.append(item_embeddings.serialize_item(idx))
-        except KeyError:
-            continue
-    return {"user": token_data.username, "history": serialized_history}
+    serialized_history = catalog.serialize_items(history_idxs, lang=lang)
+    return {
+        "user": token_data.username,
+        "history": serialized_history,
+        "lang": lang,
+    }
 
 
 @router.post("/")

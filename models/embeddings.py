@@ -11,11 +11,18 @@ from torch import Tensor
 TEXT_EMBEDDINGS_PATH = Path("models/sentence-camembert-base.pt")
 ALT_TEXT_EMBEDDINGS_PATH = Path("models/sentence-camembert-base.pt")
 METADATA_CSV_PATH = Path("data/processed/item_features/item_metadata.csv")
-THUMBNAIL_URL = "/assets/thumbnail.png"
-VIDEO_URL = "/assets/video.mp4"
 
 
 class ItemEmbeddings:
+    """Model-side view of the catalog: French text embeddings + the valid item_idx set.
+
+    Deliberately French-only and free of any database dependency - this is what
+    BERT4Rec and the vector-similarity path are built on. Localized text for API
+    responses lives in models/catalog.py, which reads courses/courses_en from
+    SQLite and never feeds anything back into this layer. self.metadata is kept as
+    the catalog's fallback when a course row is missing from the database.
+    """
+
     def __init__(
         self,
         embeddings_path: Path = TEXT_EMBEDDINGS_PATH,
@@ -75,39 +82,6 @@ class ItemEmbeddings:
             return float(value)
         except ValueError:
             return None
-
-    def serialize_item(self, item_idx: int) -> dict[str, Any]:
-        if item_idx not in self.metadata:
-            raise KeyError(f"Unknown item_idx: {item_idx}")
-        item = dict(self.metadata[item_idx])
-        item["thumbnail_url"] = THUMBNAIL_URL
-        item["video_url"] = VIDEO_URL
-        return item
-
-    def get_popular_items(self, limit: int = 10) -> list[dict[str, Any]]:
-        item_idxs = self.sorted_item_idxs[:limit]
-        return [self.serialize_item(item_idx) for item_idx in item_idxs]
-
-    def search_items(
-        self, query: str | None = None, limit: int = 20
-    ) -> list[dict[str, Any]]:
-        if not query:
-            return self.get_popular_items(limit=limit)
-        query_text = query.strip().lower()
-        results: list[tuple[int, int]] = []
-        for item_idx in self.sorted_item_idxs:
-            item = self.metadata[item_idx]
-            title = item.get("title", "").lower()
-            description = item.get("description", "").lower()
-            score = 0
-            if query_text in title:
-                score += 10
-            if query_text in description:
-                score += 2
-            if score:
-                results.append((item_idx, score))
-        results.sort(key=lambda row: (-row[1], row[0]))
-        return [self.serialize_item(item_idx) for item_idx, _ in results[:limit]]
 
     def similar_items(self, item_idx: int, top_k: int = 10) -> list[tuple[int, float]]:
         if item_idx not in self.item_idx_set:
