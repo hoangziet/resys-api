@@ -525,19 +525,21 @@ def test_pipeline_status_reports_required_actions(tmp_path: Path, monkeypatch) -
 
 
 def test_trending_ranks_by_interaction_count(tmp_path: Path, monkeypatch) -> None:
-    client = _client(tmp_path, monkeypatch)
-    monkeypatch.setattr(database, "DB_PATH", tmp_path / "db.sqlite3")
+    # Built for the side effects: patches DB_PATH and seeds the catalog this reads.
+    _client(tmp_path, monkeypatch)
 
     conn = sqlite3.connect(tmp_path / "db.sqlite3")
-    conn.execute("INSERT OR IGNORE INTO users (id, username, password_hash, role) VALUES (901, 'u1', 'x', 'learner')")
-    conn.execute("INSERT OR IGNORE INTO users (id, username, password_hash, role) VALUES (902, 'u2', 'x', 'learner')")
+    conn.executemany(
+        "INSERT OR IGNORE INTO users (id, username, password_hash, role) "
+        "VALUES (?, ?, 'x', 'learner')",
+        [(901, "u1"), (902, "u2")],
+    )
     # item 7 interacted with twice, item 9 once.
-    for user_id, item_idx in ((901, 7), (902, 7), (901, 9)):
-        conn.execute(
-            "INSERT OR REPLACE INTO user_history (user_id, item_idx, order_idx, added_at) "
-            "VALUES (?, ?, 0, CURRENT_TIMESTAMP)",
-            (user_id, item_idx),
-        )
+    conn.executemany(
+        "INSERT OR REPLACE INTO user_history (user_id, item_idx, order_idx, added_at) "
+        "VALUES (?, ?, 0, CURRENT_TIMESTAMP)",
+        [(901, 7), (902, 7), (901, 9)],
+    )
     conn.commit()
     conn.close()
 
@@ -574,9 +576,14 @@ def test_admin_course_update_and_delete(tmp_path: Path, monkeypatch) -> None:
 
     # CASCADE cleared the translation and facet rows.
     conn = sqlite3.connect(tmp_path / "db.sqlite3")
-    assert conn.execute("SELECT COUNT(*) FROM courses WHERE item_idx = ?", (item_idx,)).fetchone()[0] == 0
-    assert conn.execute("SELECT COUNT(*) FROM courses_en WHERE item_idx = ?", (item_idx,)).fetchone()[0] == 0
-    assert conn.execute("SELECT COUNT(*) FROM course_facets WHERE item_idx = ?", (item_idx,)).fetchone()[0] == 0
+
+    def row_count(table: str) -> int:
+        sql = f"SELECT COUNT(*) FROM {table} WHERE item_idx = ?"
+        return conn.execute(sql, (item_idx,)).fetchone()[0]
+
+    assert row_count("courses") == 0
+    assert row_count("courses_en") == 0
+    assert row_count("course_facets") == 0
     conn.close()
 
     assert client.get(f"/api/v1/courses/{item_idx}", headers=headers).status_code == 404

@@ -397,6 +397,7 @@ def create_course(fields: dict) -> int | None:
 _UPDATABLE_COLUMNS = (
     "title",
     "description",
+    "text",
     "difficulty",
     "theme",
     "software",
@@ -408,7 +409,12 @@ _UPDATABLE_COLUMNS = (
 
 
 def update_course(item_idx: int, fields: dict) -> bool:
-    """Apply a partial update to both catalogs and rebuild the course's facets."""
+    """Apply a partial update to both catalogs and rebuild the course's facets.
+
+    Note: editing the title or description refreshes the ``text`` column (what the
+    embedding job encodes) but does NOT regenerate an existing embedding, so a
+    course already in the tensor keeps a slightly stale vector until the next run.
+    """
     updates = {k: v for k, v in fields.items() if k in _UPDATABLE_COLUMNS}
     if not updates:
         return False
@@ -416,10 +422,18 @@ def update_course(item_idx: int, fields: dict) -> bool:
     with connection() as conn:
         cursor = conn.cursor()
         try:
-            if cursor.execute(
-                "SELECT 1 FROM courses WHERE item_idx = ?", (item_idx,)
-            ).fetchone() is None:
+            current = cursor.execute(
+                'SELECT "title", "description" FROM courses WHERE item_idx = ?',
+                (item_idx,),
+            ).fetchone()
+            if current is None:
                 return False
+
+            # Keep `text` consistent with the fields it is derived from.
+            if "title" in updates or "description" in updates:
+                title = updates.get("title", current["title"]) or ""
+                description = updates.get("description", current["description"]) or ""
+                updates["text"] = f"{title}\n{description}".strip()
 
             # thumbnail_path only exists on courses_en.
             for table in ("courses", "courses_en"):
