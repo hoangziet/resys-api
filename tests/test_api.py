@@ -12,6 +12,7 @@ from app import create_app
 from core import database
 from core.config import settings
 
+
 @pytest.fixture(autouse=True)
 def _disable_rate_limit():
     with patch("slowapi.extension.Limiter.limit", return_value=lambda f: f):
