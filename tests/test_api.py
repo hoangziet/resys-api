@@ -14,6 +14,12 @@ from core.config import settings
 
 
 @pytest.fixture(autouse=True)
+def _reset_rate_limiter():
+    from core.rate_limit import limiter
+
+    limiter.reset()
+
+@pytest.fixture(autouse=True)
 def _disable_rate_limit():
     with patch("slowapi.extension.Limiter.limit", return_value=lambda f: f):
         yield
