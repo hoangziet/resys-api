@@ -47,7 +47,13 @@ def upgrade() -> None:
     if _missing_table("courses"):
         op.create_table(
             "courses",
-            sa.Column("item_idx", sa.Integer, primary_key=True, autoincrement=False, nullable=False),
+            sa.Column(
+                        "item_idx",
+                        sa.Integer,
+                        primary_key=True,
+                        autoincrement=False,
+                        nullable=False,
+                    ),
             sa.Column("item_id", sa.Text, nullable=True),
             sa.Column("title", sa.Text, nullable=False),
             sa.Column("description", sa.Text, nullable=True),
