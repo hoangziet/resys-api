@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import math
 import sqlite3
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app import create_app
@@ -164,3 +166,149 @@ def test_language_does_not_affect_model_ranking(tmp_path: Path, monkeypatch) -> 
         return [item["item_idx"] for item in response.json()["items"]]
 
     assert ranked_idxs("en") == ranked_idxs("fr")
+
+
+def _courses(client: TestClient, headers: dict, query: str = "") -> dict:
+    response = client.get(f"/api/v1/courses/?{query}", headers=headers)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_course_filters_endpoint_lists_options(tmp_path: Path, monkeypatch) -> None:
+    """Also guards route ordering: /courses/filters must not parse as /{course_id}."""
+    client = _client(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {_login(client)}"}
+
+    response = client.get("/api/v1/courses/filters?lang=en", headers=headers)
+    assert response.status_code == 200, response.text
+    filters = response.json()["filters"]
+
+    assert set(filters) == {"difficulty", "theme", "software", "job_type", "type"}
+    for group in ("difficulty", "theme", "software", "type"):
+        assert filters[group], f"expected values for {group}"
+        for option in filters[group]:
+            assert option["count"] > 0
+            assert option["value"] and option["label"]
+
+    # difficulty slugs are derived from the level digit, so they are the same in
+    # both languages and ordered by level
+    assert [o["value"] for o in filters["difficulty"]] == [
+        "beginner",
+        "intermediate",
+        "advanced",
+    ]
+
+
+def test_course_pagination_is_applied_in_the_database(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {_login(client)}"}
+
+    page1 = _courses(client, headers, "page=1&limit=12")
+    page2 = _courses(client, headers, "page=2&limit=12")
+
+    assert len(page1["courses"]) == 12
+    assert len(page2["courses"]) == 12
+
+    total = page1["pagination"]["total"]
+    assert total > 12
+    assert page1["pagination"] == {
+        "page": 1,
+        "limit": 12,
+        "total": total,
+        "total_pages": math.ceil(total / 12),
+    }
+    # total is independent of the page being viewed
+    assert page2["pagination"]["total"] == total
+
+    idxs1 = [c["item_idx"] for c in page1["courses"]]
+    idxs2 = [c["item_idx"] for c in page2["courses"]]
+    assert set(idxs1).isdisjoint(idxs2)
+
+    # a page past the end is empty but still reports the real total
+    last = _courses(client, headers, f"page={page1['pagination']['total_pages'] + 5}&limit=12")
+    assert last["courses"] == []
+    assert last["pagination"]["total"] == total
+
+
+def test_course_pagination_rejects_out_of_range_params(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {_login(client)}"}
+
+    for query in ("page=0", "limit=0", "limit=101"):
+        response = client.get(f"/api/v1/courses/?{query}", headers=headers)
+        assert response.status_code == 422, f"{query} -> {response.status_code}"
+
+
+def test_course_filters_combine(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {_login(client)}"}
+
+    unfiltered = _courses(client, headers, "limit=1")["pagination"]["total"]
+    beginner = _courses(client, headers, "difficulty=beginner&limit=1")["pagination"]["total"]
+    excel = _courses(client, headers, "software=excel&limit=1")["pagination"]["total"]
+    both = _courses(
+        client, headers, "difficulty=beginner&software=excel&limit=1"
+    )["pagination"]["total"]
+
+    # a filter narrows, and different filters AND together
+    assert 0 < beginner < unfiltered
+    assert 0 < excel < unfiltered
+    assert both <= min(beginner, excel)
+
+    # values within one filter OR together
+    excel_or_teams = _courses(
+        client, headers, "software=excel&software=teams&limit=1"
+    )["pagination"]["total"]
+    teams = _courses(client, headers, "software=teams&limit=1")["pagination"]["total"]
+    assert excel_or_teams >= max(excel, teams)
+    assert excel_or_teams <= excel + teams
+
+
+def test_software_filter_matches_whole_tokens_only(tmp_path: Path, monkeypatch) -> None:
+    """`software=teams` must not match the distinct token "Skype VS Teams".
+
+    theme/software/job are comma-separated multilabel columns, so a substring
+    LIKE would conflate separate values.
+    """
+    client = _client(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {_login(client)}"}
+
+    conn = sqlite3.connect(tmp_path / "db.sqlite3")
+    skype_vs_teams = [
+        row[0]
+        for row in conn.execute(
+            "SELECT item_idx FROM courses_en WHERE software = 'Skype VS Teams'"
+        )
+    ]
+    conn.close()
+    if not skype_vs_teams:
+        pytest.skip("no course with software exactly 'Skype VS Teams'")
+
+    total = _courses(client, headers, "software=teams&limit=1")["pagination"]["total"]
+    matched: list[int] = []
+    for page in range(1, math.ceil(total / 100) + 1):
+        matched += [
+            c["item_idx"]
+            for c in _courses(client, headers, f"software=teams&page={page}&limit=100")["courses"]
+        ]
+
+    assert set(matched).isdisjoint(skype_vs_teams)
+
+
+def test_course_search_and_filter_together(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {_login(client)}"}
+
+    searched = _courses(client, headers, "q=Excel&limit=50")
+    assert searched["pagination"]["total"] > 0
+    for course in searched["courses"]:
+        haystack = f"{course['title']} {course['description']}".lower()
+        assert "excel" in haystack
+
+    # LIKE wildcards in user input are escaped, not interpreted: "%" must not
+    # behave as match-everything. (A literal "%" may legitimately appear in some
+    # descriptions, so compare against the unfiltered total rather than zero.)
+    everything = _courses(client, headers, "limit=1")["pagination"]["total"]
+    wild = _courses(client, headers, "q=%25&limit=1")
+    assert wild["pagination"]["total"] < everything
+

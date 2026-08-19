@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import csv
 import logging
+import re
 import sqlite3
+import unicodedata
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
@@ -28,6 +30,21 @@ _BASE_COLUMNS: tuple[str, ...] = (
 )
 FR_COLUMNS: tuple[str, ...] = _BASE_COLUMNS
 EN_COLUMNS: tuple[str, ...] = (*_BASE_COLUMNS, "thumbnail_path")
+
+# Course columns that hold a comma-separated list of values and get split into
+# course_facets rows. "job" is exposed to clients as "job_type".
+FACET_COLUMNS: tuple[str, ...] = ("difficulty", "theme", "software", "job", "type")
+
+# difficulty is stored as "<level> - <label>" in both catalogs ("1 - Découverte",
+# "1 - Beginner"). Keying its slug off the stable level digit instead of the
+# translated label makes difficulty filters language-independent.
+DIFFICULTY_SLUGS: dict[str, str] = {
+    "1": "beginner",
+    "2": "intermediate",
+    "3": "advanced",
+}
+
+_SLUG_STRIP_RE = re.compile(r"[^a-z0-9]+")
 
 
 def parse_float(value: str | None) -> float | None:
@@ -160,6 +177,7 @@ def seed_courses(cursor: sqlite3.Cursor, *, force: bool = False) -> dict[str, in
             "courses is empty, skipping courses_en seed to avoid foreign key violations"
         )
         seeded["courses_en"] = 0
+        seeded["course_facets"] = 0
         return seeded
 
     seeded["courses_en"] = _seed_table(
@@ -170,7 +188,100 @@ def seed_courses(cursor: sqlite3.Cursor, *, force: bool = False) -> dict[str, in
         default_language="en",
         force=force,
     )
+
+    # course_facets is derived entirely from the two tables above, so rebuild it
+    # whenever either was written, or whenever it is empty.
+    if seeded["courses"] or seeded["courses_en"] or _row_count(cursor, "course_facets") == 0:
+        seeded["course_facets"] = rebuild_course_facets(cursor)
+    else:
+        seeded["course_facets"] = 0
     return seeded
+
+
+def slugify(label: str) -> str:
+    """Turn a facet label into a stable URL-safe token.
+
+    "Power Automate - Flow" -> power_automate_flow
+    "Téléphonie & Visio"    -> telephonie_visio
+    """
+    decomposed = unicodedata.normalize("NFKD", label)
+    ascii_only = decomposed.encode("ascii", "ignore").decode("ascii")
+    return _SLUG_STRIP_RE.sub("_", ascii_only.lower()).strip("_")
+
+
+def facet_slug(kind: str, label: str) -> str | None:
+    """Slug for one facet value, or None when the label yields nothing usable."""
+    if kind == "difficulty":
+        level = label.strip()[:1]
+        slug = DIFFICULTY_SLUGS.get(level)
+        if slug:
+            return slug
+        # Unexpected difficulty format: fall through to generic slugging rather
+        # than dropping the value silently.
+        log.warning("Unrecognized difficulty label %r, slugging generically", label)
+    return slugify(label) or None
+
+
+def split_facet_values(raw: str | None) -> list[str]:
+    """Split a multilabel column into its individual labels."""
+    if not raw:
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def rebuild_course_facets(cursor: sqlite3.Cursor) -> int:
+    """Rebuild course_facets from courses (fr) and courses_en (en).
+
+    Full DELETE + insert: facets are pure derived data, so rebuilding is always
+    safe and stops them drifting from the course tables. The caller commits.
+    """
+    cursor.execute("DELETE FROM course_facets")
+
+    rows: list[tuple[Any, ...]] = []
+    seen_slugs: dict[tuple[str, str, str], str] = {}
+    quoted = ", ".join(f'"{column}"' for column in FACET_COLUMNS)
+
+    for table, lang in (("courses", "fr"), ("courses_en", "en")):
+        for row in cursor.execute(f'SELECT "item_idx", {quoted} FROM {table}').fetchall():
+            item_idx = int(row["item_idx"])
+            for kind in FACET_COLUMNS:
+                for label in split_facet_values(row[kind]):
+                    slug = facet_slug(kind, label)
+                    if slug is None:
+                        continue
+
+                    # Two different labels collapsing to one slug would silently
+                    # merge distinct filter values - surface it instead.
+                    key = (kind, lang, slug)
+                    previous = seen_slugs.get(key)
+                    if previous is None:
+                        seen_slugs[key] = label
+                    elif previous != label and kind != "difficulty":
+                        log.warning(
+                            "Facet slug collision: %s/%s slug %r from both %r and %r",
+                            kind,
+                            lang,
+                            slug,
+                            previous,
+                            label,
+                        )
+                    rows.append((item_idx, kind, lang, slug, label))
+
+    if not rows:
+        log.warning("No course facets derived; course tables may be empty")
+        return 0
+
+    cursor.executemany(
+        "INSERT OR REPLACE INTO course_facets "
+        '("item_idx", "kind", "lang", "slug", "label") VALUES (?, ?, ?, ?, ?)',
+        rows,
+    )
+    log.info(
+        "Rebuilt course_facets: %d rows, %d distinct (kind, lang, slug)",
+        len(rows),
+        len(seen_slugs),
+    )
+    return len(rows)
 
 
 def fetch_courses(cursor: sqlite3.Cursor, table: str) -> Iterable[sqlite3.Row]:

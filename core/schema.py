@@ -77,6 +77,23 @@ courses_en = sa.Table(
     sa.Column("thumbnail_path", sa.Text, nullable=True),
 )
 
+course_facets = sa.Table(
+    "course_facets",
+    metadata,
+    sa.Column(
+        "item_idx",
+        sa.Integer,
+        sa.ForeignKey("courses.item_idx", ondelete="CASCADE"),
+        nullable=False,
+    ),
+    sa.Column("kind", sa.Text, nullable=False),
+    sa.Column("lang", sa.Text, nullable=False),
+    sa.Column("slug", sa.Text, nullable=False),
+    sa.Column("label", sa.Text, nullable=False),
+    sa.PrimaryKeyConstraint("item_idx", "kind", "lang", "slug"),
+    sa.Index("ix_course_facets_lookup", "kind", "lang", "slug"),
+)
+
 recommendation_logs = sa.Table(
     "recommendation_logs",
     metadata,

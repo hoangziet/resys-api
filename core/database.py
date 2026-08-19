@@ -123,6 +123,22 @@ def init_db():
     """)
 
     cursor.execute("""
+    CREATE TABLE IF NOT EXISTS course_facets (
+        item_idx INTEGER NOT NULL,
+        kind TEXT NOT NULL,
+        lang TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        label TEXT NOT NULL,
+        PRIMARY KEY (item_idx, kind, lang, slug),
+        FOREIGN KEY (item_idx) REFERENCES courses(item_idx) ON DELETE CASCADE
+    );
+    """)
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS ix_course_facets_lookup "
+        "ON course_facets (kind, lang, slug)"
+    )
+
+    cursor.execute("""
     CREATE TABLE IF NOT EXISTS recommendation_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -267,6 +283,136 @@ def get_courses(lang: str = "en") -> list[dict]:
             return [dict(row) for row in fetch_courses(cursor, table)]
         except sqlite3.Error:
             log.exception("Failed to read catalog table %s", table)
+            return []
+
+
+def _escape_like(value: str) -> str:
+    """Escape LIKE wildcards so user input is matched literally."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+# Columns returned by the paginated course query, aliased so both languages look
+# identical to the serializer.
+_COURSE_SELECT_COLUMNS = (
+    "c.item_idx",
+    "c.item_id",
+    "c.title",
+    "c.description",
+    "c.language",
+    "c.difficulty",
+    "c.theme",
+    "c.software",
+    "c.job",
+    "c.type",
+    "c.duration",
+)
+
+
+def _build_course_filters(
+    lang: str, q: str | None, facets: dict[str, list[str]]
+) -> tuple[str, list, str | None]:
+    """Build the shared WHERE clause for the course query and its COUNT twin.
+
+    Each facet group contributes one EXISTS, so groups AND together; the IN inside
+    a group makes its values OR together. An empty group adds no clause at all.
+    """
+    clauses: list[str] = []
+    params: list = []
+    like: str | None = None
+
+    if q and q.strip():
+        like = f"%{_escape_like(q.strip())}%"
+        clauses.append(
+            "(c.title LIKE ? ESCAPE '\\' OR c.description LIKE ? ESCAPE '\\')"
+        )
+        params.extend([like, like])
+
+    for kind, slugs in facets.items():
+        if not slugs:
+            continue
+        placeholders = ", ".join("?" for _ in slugs)
+        clauses.append(
+            "EXISTS (SELECT 1 FROM course_facets f "
+            "WHERE f.item_idx = c.item_idx AND f.kind = ? AND f.lang = ? "
+            f"AND f.slug IN ({placeholders}))"
+        )
+        params.extend([kind, lang, *slugs])
+
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    return where, params, like
+
+
+def query_courses(
+    *,
+    lang: str = "en",
+    q: str | None = None,
+    facets: dict[str, list[str]] | None = None,
+    page: int = 1,
+    limit: int = 12,
+) -> tuple[list[dict], int]:
+    """Filter and paginate courses entirely in SQL.
+
+    Returns ``(rows, total)`` where ``rows`` holds at most ``limit`` records and
+    ``total`` is the number of courses matching the filters, ignoring pagination.
+    """
+    facets = facets or {}
+    if lang == "en":
+        source = "courses_en c"
+        thumbnail = "c.thumbnail_path AS thumbnail_path"
+    else:
+        # Thumbnails live on courses_en but are language-neutral.
+        source = "courses c LEFT JOIN courses_en en ON en.item_idx = c.item_idx"
+        thumbnail = "en.thumbnail_path AS thumbnail_path"
+
+    where, where_params, like = _build_course_filters(lang, q, facets)
+    columns = ", ".join([*_COURSE_SELECT_COLUMNS, thumbnail])
+
+    # Title matches first (mirrors the previous in-memory ranking), then item_idx
+    # so paging is stable.
+    if like is None:
+        order_by = " ORDER BY c.item_idx"
+        order_params: list = []
+    else:
+        order_by = " ORDER BY CASE WHEN c.title LIKE ? ESCAPE '\\' THEN 0 ELSE 1 END, c.item_idx"
+        order_params = [like]
+
+    offset = (page - 1) * limit
+
+    with connection() as conn:
+        cursor = conn.cursor()
+        try:
+            total = int(
+                cursor.execute(
+                    f"SELECT COUNT(*) FROM {source}{where}", where_params
+                ).fetchone()[0]
+            )
+            rows = cursor.execute(
+                f"SELECT {columns} FROM {source}{where}{order_by} LIMIT ? OFFSET ?",
+                [*where_params, *order_params, limit, offset],
+            ).fetchall()
+            return [dict(row) for row in rows], total
+        except sqlite3.Error:
+            log.exception("Failed to query courses lang=%s facets=%s", lang, facets)
+            return [], 0
+
+
+def get_facet_options(lang: str = "en") -> list[dict]:
+    """Distinct filter values for a language, with the number of matching courses.
+
+    Grouped by slug rather than label so a slug collision surfaces as one option
+    instead of two identical-looking ones.
+    """
+    with connection() as conn:
+        cursor = conn.cursor()
+        try:
+            rows = cursor.execute(
+                "SELECT kind, slug, MIN(label) AS label, COUNT(DISTINCT item_idx) AS count "
+                "FROM course_facets WHERE lang = ? GROUP BY kind, slug",
+                (lang,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.Error:
+            log.exception("Failed to read facet options lang=%s", lang)
             return []
 
 

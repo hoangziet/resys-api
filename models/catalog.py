@@ -84,13 +84,15 @@ class CourseCatalog:
                     return row
         return item_embeddings.metadata.get(item_idx)
 
-    def serialize_item(self, item_idx: int, lang: str = DEFAULT_LANGUAGE) -> dict[str, Any]:
-        self._ensure_loaded()
-        lang = self.normalize_lang(lang)
-        row = self._row_for(item_idx, lang)
-        if row is None:
-            raise KeyError(f"Unknown item_idx: {item_idx}")
+    def serialize_row(
+        self, row: dict[str, Any], item_idx: int, *, thumbnail_path: str | None = None
+    ) -> dict[str, Any]:
+        """Map one catalog row to the API shape.
 
+        Shared by the in-memory path (history, recommendations) and the SQL-backed
+        course list, so the two can't drift apart. ``thumbnail_path`` lets a SQL row
+        supply its own thumbnail instead of the in-memory lookup.
+        """
         item: dict[str, Any] = {}
         for field in SERIALIZED_FIELDS:
             value = row.get(field)
@@ -100,9 +102,29 @@ class CourseCatalog:
                 item[field] = value
             else:
                 item[field] = "" if value is None else value
-        item["thumbnail_url"] = self._thumbnail_url(item_idx)
+
+        if thumbnail_path is not None and str(thumbnail_path).strip():
+            item["thumbnail_url"] = str(thumbnail_path).strip()
+        else:
+            item["thumbnail_url"] = self._thumbnail_url(item_idx)
         item["video_url"] = VIDEO_URL
         return item
+
+    def serialize_query_row(self, row: dict[str, Any]) -> dict[str, Any]:
+        """Serialize a row returned by core.database.query_courses."""
+        return self.serialize_row(
+            row,
+            int(row["item_idx"]),
+            thumbnail_path=row.get("thumbnail_path"),
+        )
+
+    def serialize_item(self, item_idx: int, lang: str = DEFAULT_LANGUAGE) -> dict[str, Any]:
+        self._ensure_loaded()
+        lang = self.normalize_lang(lang)
+        row = self._row_for(item_idx, lang)
+        if row is None:
+            raise KeyError(f"Unknown item_idx: {item_idx}")
+        return self.serialize_row(row, item_idx)
 
     def serialize_items(
         self, item_idxs: list[int], lang: str = DEFAULT_LANGUAGE
@@ -121,35 +143,6 @@ class CourseCatalog:
     ) -> list[dict[str, Any]]:
         # Candidate order comes from the model layer, not from the catalog.
         return self.serialize_items(item_embeddings.sorted_item_idxs[:limit], lang)
-
-    def search_items(
-        self, query: str | None = None, limit: int = 20, lang: str = DEFAULT_LANGUAGE
-    ) -> list[dict[str, Any]]:
-        """Substring search over the requested language's title/description.
-
-        Same 10/2 title/description weighting as the original French-only search in
-        models.embeddings, applied to whichever language the client asked for.
-        """
-        self._ensure_loaded()
-        lang = self.normalize_lang(lang)
-        if not query:
-            return self.get_popular_items(limit=limit, lang=lang)
-
-        query_text = query.strip().lower()
-        results: list[tuple[int, int]] = []
-        for item_idx in item_embeddings.sorted_item_idxs:
-            row = self._row_for(item_idx, lang)
-            if row is None:
-                continue
-            score = 0
-            if query_text in str(row.get("title") or "").lower():
-                score += 10
-            if query_text in str(row.get("description") or "").lower():
-                score += 2
-            if score:
-                results.append((item_idx, score))
-        results.sort(key=lambda row: (-row[1], row[0]))
-        return self.serialize_items([item_idx for item_idx, _ in results[:limit]], lang)
 
 
 catalog = CourseCatalog()
