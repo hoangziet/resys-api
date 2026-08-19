@@ -7,7 +7,7 @@ metadata = sa.MetaData()
 users = sa.Table(
     "users",
     metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True, nullable=True),
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True, nullable=False),
     sa.Column("username", sa.Text, unique=True, nullable=False),
     sa.Column("password_hash", sa.Text, nullable=False),
     sa.Column("role", sa.Text, nullable=False, server_default="learner"),
@@ -31,7 +31,7 @@ user_history = sa.Table(
 courses = sa.Table(
     "courses",
     metadata,
-    sa.Column("item_idx", sa.Integer, primary_key=True, autoincrement=False),
+    sa.Column("item_idx", sa.Integer, primary_key=True, autoincrement=False, nullable=False),
     sa.Column("item_id", sa.Text, nullable=True),
     sa.Column("title", sa.Text, nullable=False),
     sa.Column("description", sa.Text, nullable=True),
@@ -42,7 +42,7 @@ courses = sa.Table(
     sa.Column("software", sa.Text, nullable=True),
     sa.Column("job", sa.Text, nullable=True),
     sa.Column("type", sa.Text, nullable=True),
-    sa.Column("duration", sa.REAL, nullable=True),
+    sa.Column("duration", sa.Float, nullable=True),
 )
 
 courses_en = sa.Table(
@@ -54,6 +54,7 @@ courses_en = sa.Table(
         sa.ForeignKey("courses.item_idx", ondelete="CASCADE"),
         primary_key=True,
         autoincrement=False,
+        nullable=False,
     ),
     sa.Column("item_id", sa.Text, nullable=True),
     sa.Column("title", sa.Text, nullable=False),
@@ -65,18 +66,18 @@ courses_en = sa.Table(
     sa.Column("software", sa.Text, nullable=True),
     sa.Column("job", sa.Text, nullable=True),
     sa.Column("type", sa.Text, nullable=True),
-    sa.Column("duration", sa.REAL, nullable=True),
+    sa.Column("duration", sa.Float, nullable=True),
     sa.Column("thumbnail_path", sa.Text, nullable=True),
 )
 
 recommendation_logs = sa.Table(
     "recommendation_logs",
     metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True, nullable=True),
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True, nullable=False),
     sa.Column("timestamp", sa.DateTime, server_default=sa.func.current_timestamp()),
     sa.Column("username", sa.Text, nullable=True),
     sa.Column("strategy", sa.Text, nullable=False),
-    sa.Column("latency_ms", sa.REAL, nullable=False),
+    sa.Column("latency_ms", sa.FLOAT, nullable=False),
     sa.Column("history", sa.Text, nullable=True),
     sa.Column("results", sa.Text, nullable=True),
     sa.Index("ix_rec_logs_timestamp", "timestamp"),

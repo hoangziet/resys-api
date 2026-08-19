@@ -73,6 +73,7 @@ data/processed/*
 !data/processed/.gitkeep
 !data/processed/item_features/
 !data/processed/item_features/item_metadata.csv
+!data/processed/item_features/item_en_final.csv
 !data/processed/item_features/metadata_vocab.json
 !data/processed/item_features/text_embeddings_manifest.json
 
