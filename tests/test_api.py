@@ -6,11 +6,16 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from unittest.mock import patch
 
 from app import create_app
 from core import database
 from core.config import settings
 
+@pytest.fixture(autouse=True)
+def _disable_rate_limit():
+    with patch("slowapi.extension.Limiter.limit", return_value=lambda f: f):
+        yield
 
 def _client(tmp_path: Path, monkeypatch) -> TestClient:
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "db.sqlite3")
