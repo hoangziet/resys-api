@@ -87,6 +87,11 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
+      - name: Free Docker space on VPS
+        run: |
+          ssh -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" \
+            "docker system prune -af --volumes"
+            
       - name: Deploy
         run: |
           ssh -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" \
