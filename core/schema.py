@@ -7,7 +7,7 @@ metadata = sa.MetaData()
 users = sa.Table(
     "users",
     metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True, nullable=False),
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
     sa.Column("username", sa.Text, unique=True, nullable=False),
     sa.Column("password_hash", sa.Text, nullable=False),
     sa.Column("role", sa.Text, nullable=False, server_default="learner"),
@@ -73,7 +73,7 @@ courses_en = sa.Table(
 recommendation_logs = sa.Table(
     "recommendation_logs",
     metadata,
-    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True, nullable=False),
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
     sa.Column("timestamp", sa.DateTime, server_default=sa.func.current_timestamp()),
     sa.Column("username", sa.Text, nullable=True),
     sa.Column("strategy", sa.Text, nullable=False),
