@@ -138,6 +138,10 @@ def for_you(
         # added after the checkpoint was trained.
         items = _trending(body.limit, lang) if history else []
         strategy = "popular_fallback_cold_start" if history else "bert4rec"
+        model = get_model()
+        if model is not None:
+            items = [i for i in items if i["item_idx"] <= model.n_items]
+
         latency_ms = (time.perf_counter() - start_time) * 1000
         monitoring.record(
             request,
@@ -182,6 +186,10 @@ def for_you(
         logger.exception("BERT4Rec inference failed, falling back to popular")
         items = _trending(body.limit, lang)
         strategy = "popular_fallback_error"
+
+    model = get_model()
+    if model is not None:
+        items = [i for i in items if i["item_idx"] <= model.n_items]
 
     latency_ms = (time.perf_counter() - start_time) * 1000
     monitoring.record(

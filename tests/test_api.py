@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from _pytest.monkeypatch import MonkeyPatch
 from fastapi.testclient import TestClient
 
 from app import create_app
@@ -24,9 +25,10 @@ def _disable_rate_limit():
     with patch("slowapi.extension.Limiter.limit", return_value=lambda f: f):
         yield
 
-def _client(tmp_path: Path, monkeypatch) -> TestClient:
+def _client(tmp_path: Path, monkeypatch, raise_server_exceptions: bool = True) -> TestClient:
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "db.sqlite3")
-    return TestClient(create_app())
+    app = create_app()
+    return TestClient(app, raise_server_exceptions=raise_server_exceptions)
 
 
 def _admin_headers(client: TestClient) -> dict:
@@ -404,8 +406,7 @@ def test_failed_recommendation_request_is_still_measured(
     tmp_path: Path, monkeypatch
 ) -> None:
     """A handler that raises must still produce a row, with the real status."""
-    monkeypatch.setattr(database, "DB_PATH", tmp_path / "db.sqlite3")
-    client = TestClient(create_app(), raise_server_exceptions=False)
+    client = _client(tmp_path, monkeypatch, raise_server_exceptions=False)
     headers = {"Authorization": f"Bearer {_login(client)}"}
 
     from models.catalog import catalog
@@ -413,14 +414,16 @@ def test_failed_recommendation_request_is_still_measured(
     def boom(*args, **kwargs):
         raise RuntimeError("induced failure")
 
-    monkeypatch.setattr(catalog, "get_popular_items", boom)
+    mp = MonkeyPatch()
+    mp.setattr(catalog, "get_popular_items", boom)
 
     response = client.post(
         "/api/v1/recommendations/popular", headers=headers, json={"limit": 3}
     )
     assert response.status_code == 500
 
-    monkeypatch.undo()
+    mp.undo()
+
     logs = client.get(
         "/api/v1/admin/recommendation-logs", headers=_admin_headers(client)
     ).json()["logs"]
@@ -481,7 +484,8 @@ def test_new_course_is_never_fed_to_bert4rec(tmp_path: Path, monkeypatch) -> Non
     assert client.post(f"/api/v1/history/?item_idx={item_idx}", headers=headers).status_code == 200
     response = client.post("/api/v1/recommendations/for-you", headers=headers, json={"limit": 5})
     assert response.status_code == 200, response.text
-    assert all(item["item_idx"] <= model.n_items for item in response.json()["items"])
+    items = response.json()["items"]
+    assert all(item["item_idx"] <= model.n_items for item in items)
 
 
 def test_new_course_is_searchable_but_not_similarity_ready(
@@ -632,5 +636,6 @@ def test_admin_course_validation_and_authorization(tmp_path: Path, monkeypatch) 
         headers=admin,
         json={"title": "X", "difficulty": "expert"},
     ).status_code == 422
+
 
 
