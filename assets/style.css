@@ -2800,3 +2800,168 @@ a:hover {
     padding: 12px;
   }
 }
+
+/* ==========================================================================
+   Course facet filters + pagination
+   Server-driven filtering: each group is a checkbox list from
+   GET /courses/filters, and the pager reflects the API's pagination metadata.
+   ========================================================================== */
+
+.facet-panel {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 20px;
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid var(--divider-tint);
+}
+
+.facet-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.facet-title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  padding-left: 4px;
+}
+
+.facet-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Theme/software/job have dozens of values, so cap the height and scroll. */
+.facet-scroll {
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.facet-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.facet-scroll::-webkit-scrollbar-thumb {
+  background: var(--surface-tint-strong);
+  border-radius: 3px;
+}
+
+.facet-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.86rem;
+  color: var(--text-secondary);
+  transition: var(--transition-fast);
+  min-width: 0;
+}
+
+.facet-option:hover {
+  background: var(--surface-tint-hover);
+  color: var(--text-primary);
+}
+
+.facet-option input[type="checkbox"] {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--color-indigo);
+  cursor: pointer;
+  margin: 0;
+}
+
+.facet-option:has(input:checked) {
+  background: var(--color-indigo-glow);
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.facet-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.facet-count {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  background: var(--surface-tint);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.facet-empty {
+  margin: 0;
+  padding: 7px 10px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 28px 0 8px;
+}
+
+.pagination:empty {
+  display: none;
+}
+
+.page-btn {
+  min-width: 38px;
+  height: 38px;
+  padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-tint);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.86rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.page-btn:hover:not(:disabled) {
+  background: var(--surface-tint-hover);
+  border-color: var(--border-tint-strong);
+  color: var(--text-primary);
+}
+
+.page-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.page-btn.page-current {
+  background: var(--color-indigo);
+  border-color: var(--color-indigo);
+  color: #ffffff;
+}
+
+.page-ellipsis {
+  padding: 0 4px;
+  color: var(--text-muted);
+}

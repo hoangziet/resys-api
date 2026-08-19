@@ -64,9 +64,10 @@ const searchInput = document.getElementById("search-input");
 const searchClearBtn = document.getElementById("search-clear");
 const searchResultsGrid = document.getElementById("search-results-grid");
 const searchCount = document.getElementById("search-count");
-const filterDifficulty = document.getElementById("filter-difficulty");
 const filterLanguage = document.getElementById("filter-language");
-const filterType = document.getElementById("filter-type");
+const facetPanel = document.getElementById("facet-panel");
+const filtersClearBtn = document.getElementById("filters-clear");
+const paginationNav = document.getElementById("pagination");
 
 // History DOM
 const historyTimeline = document.getElementById("history-timeline-container");
@@ -399,7 +400,7 @@ function setupEventListeners() {
     if (e.key === "Escape" && document.activeElement === searchInput && searchInput.value) {
       searchInput.value = "";
       searchClearBtn.classList.add("hidden");
-      runSearch();
+      resetToFirstPageAndSearch();
     }
   });
 
@@ -491,7 +492,7 @@ function setupEventListeners() {
 
     clearTimeout(searchTimeout);
     searchTimeout = setTimeout(() => {
-      runSearch();
+      resetToFirstPageAndSearch();
     }, 300);
   });
 
@@ -499,12 +500,41 @@ function setupEventListeners() {
   searchClearBtn.addEventListener("click", () => {
     searchInput.value = "";
     searchClearBtn.classList.add("hidden");
-    runSearch();
+    resetToFirstPageAndSearch();
   });
 
-  // Filters select
-  [filterDifficulty, filterType].forEach(el => {
-    el.addEventListener("change", runSearch);
+  // Facet checkboxes are rendered dynamically, so delegate from the panel.
+  facetPanel.addEventListener("change", event => {
+    const input = event.target;
+    if (!input.matches('input[type="checkbox"][data-facet]')) return;
+
+    const key = input.dataset.facet;
+    const selected = courseQuery.selected[key];
+    if (!selected) return;
+
+    const at = selected.indexOf(input.value);
+    if (input.checked && at === -1) selected.push(input.value);
+    else if (!input.checked && at !== -1) selected.splice(at, 1);
+
+    filtersClearBtn.classList.toggle("hidden", countSelectedFilters() === 0);
+    resetToFirstPageAndSearch();
+  });
+
+  filtersClearBtn.addEventListener("click", () => {
+    for (const key of FACET_KEYS) courseQuery.selected[key] = [];
+    renderFacetOptions();
+    resetToFirstPageAndSearch();
+  });
+
+  // Pagination buttons are rendered dynamically too.
+  paginationNav.addEventListener("click", event => {
+    const btn = event.target.closest("button[data-page]");
+    if (!btn || btn.disabled) return;
+    const page = Number(btn.dataset.page);
+    if (!Number.isFinite(page) || page < 1 || page === courseQuery.page) return;
+    courseQuery.page = page;
+    runSearch();
+    searchResultsGrid.scrollIntoView({ behavior: "smooth", block: "start" });
   });
 
   // Display language: server-side switch, so everything showing course text
@@ -514,7 +544,10 @@ function setupEventListeners() {
     state.lang = filterLanguage.value === "fr" ? "fr" : "en";
     localStorage.setItem("display_lang", state.lang);
     clearRecoCache();
-    runSearch();
+    // Refetch options first: theme/job/format slugs are language-specific, and
+    // loadFacetOptions drops selections that no longer exist.
+    await loadFacetOptions();
+    await resetToFirstPageAndSearch();
     await loadRecommendations();
     await renderHistoryTimeline();
   });
@@ -639,7 +672,9 @@ function switchTab(tabId) {
       break;
     case "search":
       tabTitle.innerHTML = 'Catalog Search';
-      runSearch();
+      // Options are language-specific and cheap; load them once per tab entry so
+      // a language switch elsewhere can't leave stale checkboxes behind.
+      loadFacetOptions().then(() => runSearch());
       break;
     case "history":
       tabTitle.innerHTML = 'Study Journal';
@@ -873,38 +908,131 @@ function formatDuration(sec) {
   return remMins > 0 ? `${hrs}h ${remMins}m` : `${hrs}h`;
 }
 
-// --- Search Engine ---
-// Course `type` values are translated between catalogs, so the filter maps a
-// canonical option value onto every spelling the API may return.
-const TYPE_ALIASES = {
-  tutorial: ["tutorial", "tutoriel"],
-  webcast: ["webcast"]
+// --- Course Filters + Search ---
+// Filtering and pagination are done by the backend; this only builds the query
+// string, renders the checkboxes and renders the pager.
+const FACET_KEYS = ["difficulty", "theme", "software", "job_type", "type"];
+const PAGE_SIZE = 12;
+
+// Selected slugs per facet, plus the current page.
+const courseQuery = {
+  page: 1,
+  selected: { difficulty: [], theme: [], software: [], job_type: [], type: [] },
+  options: {}
 };
+
+function buildCourseQueryString() {
+  const params = new URLSearchParams();
+  const q = searchInput.value.trim();
+  if (q) params.set("q", q);
+  for (const key of FACET_KEYS) {
+    for (const value of courseQuery.selected[key]) params.append(key, value);
+  }
+  params.set("page", String(courseQuery.page));
+  params.set("limit", String(PAGE_SIZE));
+  params.set("lang", state.lang);
+  return params.toString();
+}
+
+function countSelectedFilters() {
+  return FACET_KEYS.reduce((n, key) => n + courseQuery.selected[key].length, 0);
+}
+
+function renderFacetOptions() {
+  for (const key of FACET_KEYS) {
+    const container = document.getElementById(`facet-${key}`);
+    if (!container) continue;
+    const options = courseQuery.options[key] || [];
+
+    if (options.length === 0) {
+      container.innerHTML = `<p class="facet-empty">No values</p>`;
+      continue;
+    }
+
+    container.innerHTML = options.map(opt => {
+      const checked = courseQuery.selected[key].includes(opt.value) ? "checked" : "";
+      const id = `facet-${key}-${opt.value}`;
+      return `
+        <label class="facet-option" for="${escapeHtml(id)}">
+          <input type="checkbox" id="${escapeHtml(id)}" data-facet="${key}"
+            value="${escapeHtml(opt.value)}" ${checked} />
+          <span class="facet-label" title="${escapeHtml(opt.label)}">${escapeHtml(opt.label)}</span>
+          <span class="facet-count">${opt.count}</span>
+        </label>
+      `;
+    }).join("");
+  }
+
+  filtersClearBtn.classList.toggle("hidden", countSelectedFilters() === 0);
+}
+
+async function loadFacetOptions() {
+  try {
+    const res = await apiRequest(`/courses/filters?lang=${state.lang}`, "GET");
+    courseQuery.options = res.filters || {};
+
+    // Slugs are language-specific for theme/job/format, so drop any selection
+    // that no longer exists rather than silently filtering on a dead value.
+    for (const key of FACET_KEYS) {
+      const valid = new Set((courseQuery.options[key] || []).map(o => o.value));
+      courseQuery.selected[key] = courseQuery.selected[key].filter(v => valid.has(v));
+    }
+    renderFacetOptions();
+  } catch (err) {
+    showToast("Could not load filters", err.message, "error");
+  }
+}
+
+function renderPagination(pagination) {
+  const { page, total_pages: totalPages } = pagination;
+  if (!totalPages || totalPages <= 1) {
+    paginationNav.innerHTML = "";
+    return;
+  }
+
+  // Window of at most 5 page numbers around the current page.
+  const windowSize = 5;
+  let start = Math.max(1, page - Math.floor(windowSize / 2));
+  const end = Math.min(totalPages, start + windowSize - 1);
+  start = Math.max(1, end - windowSize + 1);
+
+  let html = `<button class="page-btn" data-page="${page - 1}" ${page <= 1 ? "disabled" : ""}>
+      <i class="fa-solid fa-chevron-left"></i></button>`;
+  if (start > 1) {
+    html += `<button class="page-btn" data-page="1">1</button>`;
+    if (start > 2) html += `<span class="page-ellipsis">…</span>`;
+  }
+  for (let p = start; p <= end; p++) {
+    html += `<button class="page-btn ${p === page ? "page-current" : ""}" data-page="${p}">${p}</button>`;
+  }
+  if (end < totalPages) {
+    if (end < totalPages - 1) html += `<span class="page-ellipsis">…</span>`;
+    html += `<button class="page-btn" data-page="${totalPages}">${totalPages}</button>`;
+  }
+  html += `<button class="page-btn" data-page="${page + 1}" ${page >= totalPages ? "disabled" : ""}>
+      <i class="fa-solid fa-chevron-right"></i></button>`;
+
+  paginationNav.innerHTML = html;
+}
 
 async function runSearch() {
   searchResultsGrid.innerHTML = renderSkeletons(8);
-  const q = searchInput.value.trim();
 
   try {
-    const res = await apiRequest(withLang(`/courses/?q=${encodeURIComponent(q)}`), "GET");
-    let courses = res.data;
+    const res = await apiRequest(`/courses/?${buildCourseQueryString()}`, "GET");
+    const courses = res.courses || [];
+    const pagination = res.pagination || { page: 1, total: 0, total_pages: 0 };
 
-    // Apply front-end filtering
-    const difficultyVal = filterDifficulty.value;
-    const typeVal = filterType.value;
-
-    if (difficultyVal) {
-      // Difficulty is stored as "<level> - <label>" in both languages
-      // ("1 - Découverte" / "1 - Beginner"), so match on the level prefix.
-      courses = courses.filter(c => c.difficulty && c.difficulty.trim().startsWith(difficultyVal));
+    const total = pagination.total;
+    if (total === 0) {
+      searchCount.textContent = "Showing 0 courses";
+    } else {
+      const first = (pagination.page - 1) * pagination.limit + 1;
+      const last = first + courses.length - 1;
+      searchCount.textContent =
+        `Showing ${first}–${last} of ${total} courses` +
+        (pagination.total_pages > 1 ? ` (page ${pagination.page} of ${pagination.total_pages})` : "");
     }
-    if (typeVal) {
-      // `type` is translated ("tutoriel" in fr, "tutorial" in en), so accept both.
-      const accepted = TYPE_ALIASES[typeVal] || [typeVal];
-      courses = courses.filter(c => c.type && accepted.includes(c.type.trim().toLowerCase()));
-    }
-
-    searchCount.textContent = `Showing ${courses.length} courses`;
 
     if (courses.length === 0) {
       searchResultsGrid.innerHTML = `
@@ -914,13 +1042,21 @@ async function runSearch() {
           <p>Try refining your search text or removing filters.</p>
         </div>
       `;
+      paginationNav.innerHTML = "";
       return;
     }
 
     searchResultsGrid.innerHTML = renderCourseCards(courses);
+    renderPagination(pagination);
   } catch (err) {
     showToast("Search failed", err.message, "error");
   }
+}
+
+// Any filter or search change invalidates the current page number.
+function resetToFirstPageAndSearch() {
+  courseQuery.page = 1;
+  return runSearch();
 }
 
 // --- Render History Timeline ---

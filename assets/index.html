@@ -269,30 +269,38 @@
 
             <div class="search-filters">
               <div class="filter-group">
-                <label for="filter-difficulty">Difficulty</label>
-                <select id="filter-difficulty">
-                  <option value="">All Difficulties</option>
-                  <option value="1">Beginner</option>
-                  <option value="2">Intermediate</option>
-                  <option value="3">Advanced</option>
-                </select>
-              </div>
-
-              <div class="filter-group">
                 <label for="filter-language">Display language</label>
                 <select id="filter-language">
                   <option value="en">English (en)</option>
                   <option value="fr">French (fr)</option>
                 </select>
               </div>
+              <button id="filters-clear" class="btn btn-secondary-outline hidden">
+                <i class="fa-solid fa-filter-circle-xmark"></i> Clear filters
+              </button>
+            </div>
 
-              <div class="filter-group">
-                <label for="filter-type">Type</label>
-                <select id="filter-type">
-                  <option value="">All Types</option>
-                  <option value="tutorial">Tutorial</option>
-                  <option value="webcast">Webcast</option>
-                </select>
+            <!-- Facet checkbox groups, populated from GET /courses/filters -->
+            <div class="facet-panel" id="facet-panel">
+              <div class="facet-group" data-facet="difficulty">
+                <h4 class="facet-title">Difficulty</h4>
+                <div class="facet-options" id="facet-difficulty"></div>
+              </div>
+              <div class="facet-group" data-facet="theme">
+                <h4 class="facet-title">Theme</h4>
+                <div class="facet-options facet-scroll" id="facet-theme"></div>
+              </div>
+              <div class="facet-group" data-facet="software">
+                <h4 class="facet-title">Software</h4>
+                <div class="facet-options facet-scroll" id="facet-software"></div>
+              </div>
+              <div class="facet-group" data-facet="job_type">
+                <h4 class="facet-title">Job type</h4>
+                <div class="facet-options facet-scroll" id="facet-job_type"></div>
+              </div>
+              <div class="facet-group" data-facet="type">
+                <h4 class="facet-title">Format</h4>
+                <div class="facet-options" id="facet-type"></div>
               </div>
             </div>
           </div>
@@ -304,6 +312,8 @@
           <div class="grid-list" id="search-results-grid">
             <!-- Cards injected here -->
           </div>
+
+          <nav class="pagination" id="pagination" aria-label="Course pages"></nav>
         </section>
 
         <!-- TAB CONTENT: HISTORY -->
