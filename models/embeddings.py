@@ -83,6 +83,20 @@ class ItemEmbeddings:
         except ValueError:
             return None
 
+    @property
+    def max_embedding_idx(self) -> int:
+        """Highest item_idx that has a row in the embedding tensor.
+
+        Row 0 is the padding row, so valid item rows are 1..max_embedding_idx.
+        Courses created after the tensor was built fall outside this range and
+        cannot participate in text similarity until the offline embedding job runs.
+        """
+        return self.embeddings.size(0) - 1
+
+    def has_embedding(self, item_idx: int) -> bool:
+        """Whether this course can be used for vector similarity."""
+        return 1 <= item_idx <= self.max_embedding_idx and item_idx in self.item_idx_set
+
     def similar_items(self, item_idx: int, top_k: int = 10) -> list[tuple[int, float]]:
         if item_idx not in self.item_idx_set:
             raise KeyError(f"Unknown item_idx: {item_idx}")

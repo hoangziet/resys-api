@@ -50,6 +50,10 @@ courses = sa.Table(
     sa.Column("job", sa.Text, nullable=True),
     sa.Column("type", sa.Text, nullable=True),
     sa.Column("duration", sa.Float, nullable=True),
+    # Whether this course has a row in the text-embedding tensor. CSV-seeded rows
+    # are 'ready'; admin-created ones start 'pending' until the offline embedding
+    # job runs, and are excluded from text-similarity recommendations until then.
+    sa.Column("embedding_status", sa.Text, nullable=True, server_default="ready"),
 )
 
 courses_en = sa.Table(
@@ -104,7 +108,12 @@ recommendation_logs = sa.Table(
     sa.Column("latency_ms", sa.FLOAT, nullable=False),
     sa.Column("history", sa.Text, nullable=True),
     sa.Column("results", sa.Text, nullable=True),
+    # Filled by RecommendationMetricsMiddleware so failed and rate-limited
+    # requests are measured too, not just successful ones.
+    sa.Column("endpoint", sa.Text, nullable=True),
+    sa.Column("status_code", sa.Integer, nullable=True),
     sa.Index("ix_rec_logs_timestamp", "timestamp"),
     sa.Index("ix_rec_logs_username", "username"),
     sa.Index("ix_rec_logs_strategy", "strategy"),
+    sa.Index("ix_rec_logs_endpoint", "endpoint"),
 )

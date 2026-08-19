@@ -379,25 +379,74 @@
               </div>
             </div>
 
-            <!-- Card: API Query Stats -->
-            <div class="admin-card">
-              <h3><i class="fa-solid fa-gauge-high"></i> Latency Overview</h3>
-              <div class="latency-chart-container">
-                <div class="chart-y-axis">
-                  <span>50ms</span>
-                  <span>25ms</span>
-                  <span>0ms</span>
-                </div>
-                <div class="chart-bars" id="latency-bars">
-                  <!-- Generated bars -->
-                  <div class="chart-placeholder">No logs recorded yet. Query the model to track latencies!</div>
-                </div>
+            <!-- Card: Latency Overview -->
+            <div class="admin-card admin-card-wide">
+              <div class="card-head-row">
+                <h3><i class="fa-solid fa-gauge-high"></i> Latency Overview</h3>
+                <select id="latency-window" class="inline-select" aria-label="Time window">
+                  <option value="1">Last hour</option>
+                  <option value="24" selected>Last 24 hours</option>
+                  <option value="168">Last 7 days</option>
+                  <option value="720">Last 30 days</option>
+                </select>
               </div>
-              <div class="chart-legend">
-                <span><span class="legend-color b4r"></span> BERT4Rec</span>
-                <span><span class="legend-color sim"></span> Similar vector</span>
-                <span><span class="legend-color pop"></span> Popular Fallback</span>
+
+              <!-- Single headline numbers: stat tiles, not a chart -->
+              <div class="stat-tiles" id="latency-tiles"></div>
+              <p class="stat-note">
+                <i class="fa-solid fa-circle-info"></i>
+                <strong>Median = P50</strong> — the same percentile. Both are shown because
+                monitoring dashboards conventionally list each.
+              </p>
+
+              <div class="viz-block">
+                <div class="viz-head">
+                  <h4 class="viz-title">Latency over time <span class="viz-unit">(ms)</span></h4>
+                  <div class="viz-controls">
+                    <div class="viz-legend" id="latency-legend"></div>
+                    <button id="btn-latency-table" class="btn-ghost-sm" aria-expanded="false">
+                      <i class="fa-solid fa-table-list"></i> Table
+                    </button>
+                  </div>
+                </div>
+                <div class="viz-surface" id="latency-chart">
+                  <p class="chart-placeholder">No requests recorded in this window yet.</p>
+                </div>
+                <div class="viz-table-wrapper hidden" id="latency-table"></div>
               </div>
+            </div>
+
+            <!-- Card: Course Management -->
+            <div class="admin-card admin-card-wide">
+              <div class="card-head-row">
+                <h3><i class="fa-solid fa-book-bookmark"></i> Course Management</h3>
+                <button id="btn-add-course" class="btn btn-primary">
+                  <i class="fa-solid fa-plus"></i> Add Course
+                </button>
+              </div>
+
+              <div class="pipeline-banner" id="pipeline-banner"></div>
+
+              <div class="admin-search-row">
+                <input type="text" id="admin-course-search" class="inline-input"
+                  placeholder="Search courses by title, theme, software…" />
+              </div>
+
+              <div class="logs-table-wrapper">
+                <table class="logs-table">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Title</th>
+                      <th>Difficulty</th>
+                      <th>Recommender status</th>
+                      <th class="col-actions">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="admin-courses-tbody"></tbody>
+                </table>
+              </div>
+              <nav class="pagination" id="admin-courses-pagination"></nav>
             </div>
           </div>
 
@@ -428,6 +477,92 @@
           </div>
         </section>
       </main>
+    </div>
+
+    <!-- COURSE FORM MODAL (admin) -->
+    <div id="course-modal" class="modal-overlay hidden">
+      <div class="modal-container">
+        <div class="modal-head">
+          <h3 id="course-modal-title">Add Course</h3>
+          <button id="btn-close-course-modal" class="btn-close-drawer" aria-label="Close">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+
+        <form id="course-form" class="modal-body">
+          <input type="hidden" id="course-item-idx" />
+
+          <div class="form-field">
+            <label for="course-title">Title</label>
+            <input type="text" id="course-title" required maxlength="500" />
+          </div>
+
+          <div class="form-field">
+            <label for="course-description">Description</label>
+            <textarea id="course-description" rows="4"></textarea>
+          </div>
+
+          <div class="form-grid">
+            <div class="form-field">
+              <label for="course-difficulty">Difficulty</label>
+              <select id="course-difficulty">
+                <option value="">—</option>
+                <option value="beginner">Beginner</option>
+                <option value="intermediate">Intermediate</option>
+                <option value="advanced">Advanced</option>
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="course-type">Format</label>
+              <select id="course-type">
+                <option value="">—</option>
+                <option value="tutorial">Tutorial</option>
+                <option value="webcast">Webcast</option>
+                <option value="use_case">Use case</option>
+              </select>
+            </div>
+
+            <div class="form-field">
+              <label for="course-theme">Theme</label>
+              <input type="text" id="course-theme" list="course-theme-options"
+                placeholder="Organize, Produce" />
+              <datalist id="course-theme-options"></datalist>
+            </div>
+
+            <div class="form-field">
+              <label for="course-software">Software</label>
+              <input type="text" id="course-software" list="course-software-options"
+                placeholder="Excel, Teams" />
+              <datalist id="course-software-options"></datalist>
+            </div>
+
+            <div class="form-field">
+              <label for="course-job">Job Type</label>
+              <input type="text" id="course-job" list="course-job-options"
+                placeholder="Assistant, Project Manager" />
+              <datalist id="course-job-options"></datalist>
+            </div>
+
+            <div class="form-field">
+              <label for="course-duration">Duration (seconds)</label>
+              <input type="number" id="course-duration" min="0" step="1" />
+            </div>
+          </div>
+
+          <p class="form-hint">
+            <i class="fa-solid fa-circle-info"></i>
+            Separate multiple values with commas. A new course is searchable and can trend
+            immediately, but joins <strong>text-similarity</strong> only after the embedding
+            job runs, and <strong>BERT4Rec</strong> only after the model is retrained.
+          </p>
+
+          <div class="modal-actions">
+            <button type="button" id="btn-cancel-course" class="btn btn-secondary-outline">Cancel</button>
+            <button type="submit" id="btn-save-course" class="btn btn-primary">Create Course</button>
+          </div>
+        </form>
+      </div>
     </div>
 
     <!-- COURSE DETAIL DRAWER -->

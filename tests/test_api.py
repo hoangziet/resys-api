@@ -17,6 +17,11 @@ def _client(tmp_path: Path, monkeypatch) -> TestClient:
     return TestClient(create_app())
 
 
+def _admin_headers(client: TestClient) -> dict:
+    token = _login(client, settings.admin_username, settings.admin_password)
+    return {"Authorization": f"Bearer {token}"}
+
+
 def _login(client: TestClient, username: str = "learner", password: str = "Learner123") -> str:
     response = client.post(
         "/api/v1/auth/token",
@@ -311,4 +316,302 @@ def test_course_search_and_filter_together(tmp_path: Path, monkeypatch) -> None:
     everything = _courses(client, headers, "limit=1")["pagination"]["total"]
     wild = _courses(client, headers, "q=%25&limit=1")
     assert wild["pagination"]["total"] < everything
+
+
+def test_search_matches_tokens_across_all_searchable_columns(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {_login(client)}"}
+
+    # A term that lives in `software`, not in title/description, still matches.
+    by_software = _courses(client, headers, "q=OneDrive&limit=50")
+    assert by_software["pagination"]["total"] > 0
+
+    # Multiple tokens AND together, so adding a token can only narrow.
+    one = _courses(client, headers, "q=Teams&limit=1")["pagination"]["total"]
+    two = _courses(client, headers, "q=Teams+meeting&limit=1")["pagination"]["total"]
+    assert one > 0
+    assert two <= one
+
+
+# --------------------------------------------------------------------------
+# Monitoring
+# --------------------------------------------------------------------------
+
+
+def test_latency_percentiles_are_exact() -> None:
+    values = [float(n) for n in range(1, 101)]  # 1..100
+    summary = database._summarize_latencies(values)
+
+    assert summary["count"] == 100
+    assert summary["avg"] == 50.5
+    assert summary["min"] == 1.0
+    assert summary["max"] == 100.0
+    # Nearest-rank: ceil(0.50*100)=50 -> the 50th value.
+    assert summary["p50"] == 50.0
+    assert summary["p95"] == 95.0
+    assert summary["p99"] == 99.0
+    # Median and P50 are the same percentile, not two different statistics.
+    assert summary["median"] == summary["p50"]
+
+    empty = database._summarize_latencies([])
+    assert empty["count"] == 0
+    assert empty["p99"] == 0.0
+
+
+def test_recommendation_requests_are_logged_with_endpoint_and_status(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {_login(client)}"}
+
+    response = client.post(
+        "/api/v1/recommendations/popular", headers=headers, json={"limit": 3}
+    )
+    assert response.status_code == 200, response.text
+
+    logs = client.get(
+        "/api/v1/admin/recommendation-logs", headers=_admin_headers(client)
+    ).json()["logs"]
+    assert logs, "middleware should have written a log row"
+    latest = logs[0]
+    assert latest["endpoint"] == "/api/v1/recommendations/popular"
+    assert latest["status_code"] == 200
+    assert latest["latency_ms"] > 0
+
+    stats = client.get(
+        "/api/v1/admin/latency-stats?hours=24", headers=_admin_headers(client)
+    ).json()
+    assert stats["overall"]["count"] >= 1
+    assert stats["overall"]["median"] == stats["overall"]["p50"]
+    assert any(e["endpoint"] == "/api/v1/recommendations/popular" for e in stats["by_endpoint"])
+
+
+def test_failed_recommendation_request_is_still_measured(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A handler that raises must still produce a row, with the real status."""
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "db.sqlite3")
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    headers = {"Authorization": f"Bearer {_login(client)}"}
+
+    from models.catalog import catalog
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("induced failure")
+
+    monkeypatch.setattr(catalog, "get_popular_items", boom)
+
+    response = client.post(
+        "/api/v1/recommendations/popular", headers=headers, json={"limit": 3}
+    )
+    assert response.status_code == 500
+
+    monkeypatch.undo()
+    logs = client.get(
+        "/api/v1/admin/recommendation-logs", headers=_admin_headers(client)
+    ).json()["logs"]
+    assert any(row["status_code"] == 500 for row in logs), (
+        "a failing request must be measured; percentiles built only from "
+        "successes hide the incidents monitoring exists to catch"
+    )
+
+
+# --------------------------------------------------------------------------
+# New course -> recommendation pipeline
+# --------------------------------------------------------------------------
+
+
+def _create_course(client: TestClient, **overrides) -> dict:
+    payload = {
+        "title": "Intro to Power BI Dashboards",
+        "description": "Build a first report.",
+        "difficulty": "beginner",
+        "software": "Power BI",
+        "theme": "Analyze",
+        "job_type": "Project Manager",
+        "type": "tutorial",
+    }
+    payload.update(overrides)
+    response = client.post(
+        "/api/v1/admin/courses", headers=_admin_headers(client), json=payload
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_new_course_is_never_fed_to_bert4rec(tmp_path: Path, monkeypatch) -> None:
+    """The mask-token collision guard.
+
+    mask_token == n_items + 1, so the first item_idx past the training catalog is
+    numerically identical to [MASK]. A new course may enter user_history (it is
+    application data) but must never reach predict().
+    """
+    client = _client(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {_login(client)}"}
+
+    from api.recommendations import get_model, model_history
+
+    model = get_model()
+    assert model is not None
+
+    created = _create_course(client)
+    item_idx = created["item_idx"]
+    assert item_idx > model.n_items, "a new course must sit outside the model vocabulary"
+
+    # The exact hazard: the mask token is never passed through as an item.
+    assert model_history([model.mask_token]) == []
+    assert model_history([item_idx]) == []
+    assert model_history([1, item_idx, 2]) == [1, 2]
+
+    # History accepts it (application data), and for-you still succeeds.
+    assert client.post(f"/api/v1/history/?item_idx={item_idx}", headers=headers).status_code == 200
+    response = client.post("/api/v1/recommendations/for-you", headers=headers, json={"limit": 5})
+    assert response.status_code == 200, response.text
+    assert all(item["item_idx"] <= model.n_items for item in response.json()["items"])
+
+
+def test_new_course_is_searchable_but_not_similarity_ready(
+    tmp_path: Path, monkeypatch
+) -> None:
+    client = _client(tmp_path, monkeypatch)
+    headers = {"Authorization": f"Bearer {_login(client)}"}
+
+    created = _create_course(client)
+    item_idx = created["item_idx"]
+    availability = created["recommendation_availability"]
+    assert availability["search_and_filter"] is True
+    assert availability["trending"] is True
+    assert availability["text_similarity"] is False
+    assert availability["bert4rec"] is False
+    assert availability["embedding_status"] == "pending"
+
+    # Immediately searchable and filterable.
+    found = _courses(client, headers, "q=Power+BI+Dashboards&limit=20")
+    assert item_idx in [c["item_idx"] for c in found["courses"]]
+
+    filters = client.get("/api/v1/courses/filters?lang=en", headers=headers).json()["filters"]
+    assert "power_bi" in [o["value"] for o in filters["software"]]
+
+    # Similarity refuses with 409 (exists but unembedded), not 404 (missing).
+    response = client.post(
+        f"/api/v1/recommendations/similar/{item_idx}", headers=headers, json={"limit": 5}
+    )
+    assert response.status_code == 409, response.text
+    assert "embedding" in response.json()["detail"].lower()
+
+    missing = client.post(
+        "/api/v1/recommendations/similar/999999", headers=headers, json={"limit": 5}
+    )
+    assert missing.status_code == 404
+
+
+def test_pipeline_status_reports_required_actions(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    admin = _admin_headers(client)
+
+    before = client.get("/api/v1/admin/pipeline-status", headers=admin).json()
+    assert before["text_similarity"]["action_required"] is False
+
+    created = _create_course(client)
+    after = client.get("/api/v1/admin/pipeline-status", headers=admin).json()
+
+    assert after["catalog"]["courses"] == before["catalog"]["courses"] + 1
+    assert after["text_similarity"]["action_required"] is True
+    assert created["item_idx"] in after["text_similarity"]["pending_item_idxs"]
+    assert after["bert4rec"]["action_required"] is True
+    assert after["trending"]["action_required"] is False
+
+
+def test_trending_ranks_by_interaction_count(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "db.sqlite3")
+
+    conn = sqlite3.connect(tmp_path / "db.sqlite3")
+    conn.execute("INSERT OR IGNORE INTO users (id, username, password_hash, role) VALUES (901, 'u1', 'x', 'learner')")
+    conn.execute("INSERT OR IGNORE INTO users (id, username, password_hash, role) VALUES (902, 'u2', 'x', 'learner')")
+    # item 7 interacted with twice, item 9 once.
+    for user_id, item_idx in ((901, 7), (902, 7), (901, 9)):
+        conn.execute(
+            "INSERT OR REPLACE INTO user_history (user_id, item_idx, order_idx, added_at) "
+            "VALUES (?, ?, 0, CURRENT_TIMESTAMP)",
+            (user_id, item_idx),
+        )
+    conn.commit()
+    conn.close()
+
+    trending = database.get_trending_items(limit=5, days=30)
+    assert trending[:2] == [7, 9], f"expected interaction-count order, got {trending}"
+
+
+# --------------------------------------------------------------------------
+# Admin course CRUD
+# --------------------------------------------------------------------------
+
+
+def test_admin_course_update_and_delete(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+    admin = _admin_headers(client)
+    headers = {"Authorization": f"Bearer {_login(client)}"}
+
+    item_idx = _create_course(client)["item_idx"]
+
+    updated = client.put(
+        f"/api/v1/admin/courses/{item_idx}",
+        headers=admin,
+        json={"title": "Renamed Course", "difficulty": "advanced"},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["course"]["title"] == "Renamed Course"
+
+    detail = client.get(f"/api/v1/courses/{item_idx}", headers=headers).json()
+    assert detail["title"] == "Renamed Course"
+    assert detail["difficulty"].startswith("3")
+
+    deleted = client.delete(f"/api/v1/admin/courses/{item_idx}", headers=admin)
+    assert deleted.status_code == 200, deleted.text
+
+    # CASCADE cleared the translation and facet rows.
+    conn = sqlite3.connect(tmp_path / "db.sqlite3")
+    assert conn.execute("SELECT COUNT(*) FROM courses WHERE item_idx = ?", (item_idx,)).fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM courses_en WHERE item_idx = ?", (item_idx,)).fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM course_facets WHERE item_idx = ?", (item_idx,)).fetchone()[0] == 0
+    conn.close()
+
+    assert client.get(f"/api/v1/courses/{item_idx}", headers=headers).status_code == 404
+
+
+def test_admin_delete_refuses_model_vocabulary_course(tmp_path: Path, monkeypatch) -> None:
+    """Deleting a course the checkpoint still predicts needs an explicit override."""
+    client = _client(tmp_path, monkeypatch)
+    admin = _admin_headers(client)
+
+    blocked = client.delete("/api/v1/admin/courses/1", headers=admin)
+    assert blocked.status_code == 409, blocked.text
+    assert "force" in blocked.json()["detail"].lower()
+
+    forced = client.delete("/api/v1/admin/courses/1?force=true", headers=admin)
+    assert forced.status_code == 200, forced.text
+
+
+def test_admin_course_validation_and_authorization(tmp_path: Path, monkeypatch) -> None:
+    client = _client(tmp_path, monkeypatch)
+
+    # Learners cannot manage courses.
+    learner = {"Authorization": f"Bearer {_login(client)}"}
+    assert client.post(
+        "/api/v1/admin/courses", headers=learner, json={"title": "Nope"}
+    ).status_code == 403
+
+    admin = _admin_headers(client)
+    assert client.post(
+        "/api/v1/admin/courses", headers=admin, json={"title": ""}
+    ).status_code == 422
+    assert client.post(
+        "/api/v1/admin/courses",
+        headers=admin,
+        json={"title": "X", "difficulty": "expert"},
+    ).status_code == 422
+
 

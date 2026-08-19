@@ -14,6 +14,9 @@ VIDEO_URL = "/assets/video.mp4"
 SUPPORTED_LANGUAGES = ("en", "fr")
 DEFAULT_LANGUAGE = "en"
 
+# Window used for trending interaction counts.
+TRENDING_WINDOW_DAYS = 30
+
 # Fields returned to clients, in addition to thumbnail_url / video_url.
 SERIALIZED_FIELDS = (
     "item_idx",
@@ -111,7 +114,7 @@ class CourseCatalog:
         return item
 
     def serialize_query_row(self, row: dict[str, Any]) -> dict[str, Any]:
-        """Serialize a row returned by core.database.query_courses."""
+        """Serialize a row returned by core.search.search_courses."""
         return self.serialize_row(
             row,
             int(row["item_idx"]),
@@ -141,8 +144,42 @@ class CourseCatalog:
     def get_popular_items(
         self, limit: int = 10, lang: str = DEFAULT_LANGUAGE
     ) -> list[dict[str, Any]]:
-        # Candidate order comes from the model layer, not from the catalog.
-        return self.serialize_items(item_embeddings.sorted_item_idxs[:limit], lang)
+        """Trending courses by real interaction counts, catalog order as fallback.
+
+        Any catalog course can trend - including admin-created ones - because this
+        counts user_history rows rather than reading a precomputed artifact. When
+        there is no history yet it degrades to catalog order, which is what the
+        previous stub always returned.
+        """
+        self._ensure_loaded()
+        lang = self.normalize_lang(lang)
+
+        trending = database.get_trending_items(limit=limit, days=TRENDING_WINDOW_DAYS)
+        if trending:
+            items = self.serialize_items(trending, lang)
+            if len(items) >= limit:
+                return items
+            # Top up from catalog order without repeating anything already shown.
+            seen = {item["item_idx"] for item in items}
+            for item_idx in self._catalog_order():
+                if len(items) >= limit:
+                    break
+                if item_idx in seen:
+                    continue
+                try:
+                    items.append(self.serialize_item(item_idx, lang))
+                except KeyError:
+                    continue
+            return items
+
+        return self.serialize_items(self._catalog_order()[:limit], lang)
+
+    def _catalog_order(self) -> list[int]:
+        """Deterministic fallback ordering across the whole catalog."""
+        loaded = self._by_lang.get("en") or self._by_lang.get("fr") or {}
+        if loaded:
+            return sorted(loaded)
+        return list(item_embeddings.sorted_item_idxs)
 
 
 catalog = CourseCatalog()

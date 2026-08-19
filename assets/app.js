@@ -84,7 +84,28 @@ const btnSyncCatalog = document.getElementById("btn-sync-catalog");
 const btnRebuildEmb = document.getElementById("btn-rebuild-emb");
 const btnRefreshLogs = document.getElementById("btn-refresh-logs");
 const logsTbody = document.getElementById("logs-tbody");
-const latencyBars = document.getElementById("latency-bars");
+
+// Admin monitoring DOM
+const latencyWindowSelect = document.getElementById("latency-window");
+const latencyTiles = document.getElementById("latency-tiles");
+const latencyLegend = document.getElementById("latency-legend");
+const latencyChart = document.getElementById("latency-chart");
+const latencyTable = document.getElementById("latency-table");
+const btnLatencyTable = document.getElementById("btn-latency-table");
+
+// Admin course management DOM
+const pipelineBanner = document.getElementById("pipeline-banner");
+const adminCoursesTbody = document.getElementById("admin-courses-tbody");
+const adminCoursesPagination = document.getElementById("admin-courses-pagination");
+const adminCourseSearch = document.getElementById("admin-course-search");
+const btnAddCourse = document.getElementById("btn-add-course");
+const courseModal = document.getElementById("course-modal");
+const courseModalTitle = document.getElementById("course-modal-title");
+const courseForm = document.getElementById("course-form");
+const courseItemIdx = document.getElementById("course-item-idx");
+const btnSaveCourse = document.getElementById("btn-save-course");
+const btnCancelCourse = document.getElementById("btn-cancel-course");
+const btnCloseCourseModal = document.getElementById("btn-close-course-modal");
 
 // Drawer DOM
 const detailDrawer = document.getElementById("detail-drawer");
@@ -608,7 +629,11 @@ function setupEventListeners() {
     toggleLoading(true);
     try {
       const res = await apiRequest("/admin/sync-catalog", "POST");
-      showToast("Sync Successful", `Database catalog updated with ${res.synced_items} items!`, "success");
+      showToast(
+        "Sync Successful",
+        `Catalog now holds ${res.courses} courses (${res.facet_rows} facet rows rebuilt).`,
+        "success"
+      );
       await loadAdminDashboard();
     } catch (err) {
       showToast("Error", err.message, "error");
@@ -620,10 +645,21 @@ function setupEventListeners() {
   btnRebuildEmb.addEventListener("click", async () => {
     toggleLoading(true);
     try {
-      await apiRequest("/admin/rebuild-embeddings", "POST");
-      showToast("Success", "Course embeddings successfully rebuilt!", "success");
+      const res = await apiRequest("/admin/rebuild-embeddings", "POST");
+      if (!res.pending_courses) {
+        showToast("Nothing to do", "Every course already has an embedding.", "info");
+      } else {
+        showToast(
+          "Embeddings generated",
+          `${res.embedded} course(s) embedded. ${res.restart_required ? "Restart the API to load them." : ""}`,
+          "success"
+        );
+      }
+      await loadPipelineStatus();
     } catch (err) {
-      showToast("Error", err.message, "error");
+      // 501 when the optional encoder dependency is absent: the message carries
+      // the exact offline command to run.
+      showToast("Embedding job not run", err.message, "error");
     } finally {
       toggleLoading(false);
     }
@@ -632,7 +668,7 @@ function setupEventListeners() {
   btnRefreshLogs.addEventListener("click", async () => {
     toggleLoading(true);
     try {
-      await loadAdminLogs();
+      await Promise.all([loadAdminLogs(), loadLatencyStats()]);
       showToast("Refreshed", "Latest recommendation logs fetched.", "info");
     } catch (err) {
       showToast("Error", err.message, "error");
@@ -640,6 +676,76 @@ function setupEventListeners() {
       toggleLoading(false);
     }
   });
+
+  // Latency window + table toggle
+  if (latencyWindowSelect) {
+    latencyWindowSelect.addEventListener("change", async () => {
+      try {
+        await loadLatencyStats();
+      } catch (err) {
+        showToast("Error", err.message, "error");
+      }
+    });
+  }
+
+  if (btnLatencyTable) {
+    btnLatencyTable.addEventListener("click", () => {
+      const shown = latencyTable.classList.toggle("hidden");
+      btnLatencyTable.setAttribute("aria-expanded", String(!shown));
+    });
+  }
+
+  // Course management
+  if (btnAddCourse) {
+    btnAddCourse.addEventListener("click", () => openCourseModal(null));
+  }
+  if (btnCancelCourse) btnCancelCourse.addEventListener("click", closeCourseModal);
+  if (btnCloseCourseModal) btnCloseCourseModal.addEventListener("click", closeCourseModal);
+  if (courseModal) {
+    courseModal.addEventListener("click", event => {
+      if (event.target === courseModal) closeCourseModal();
+    });
+  }
+  if (courseForm) courseForm.addEventListener("submit", submitCourseForm);
+
+  if (adminCoursesTbody) {
+    adminCoursesTbody.addEventListener("click", async event => {
+      const editBtn = event.target.closest("button[data-edit]");
+      if (editBtn) {
+        const itemIdx = editBtn.dataset.edit;
+        try {
+          const course = await apiRequest(withLang(`/courses/${itemIdx}`), "GET");
+          openCourseModal({ ...course, item_idx: Number(itemIdx) });
+        } catch (err) {
+          showToast("Could not open course", err.message, "error");
+        }
+        return;
+      }
+      const delBtn = event.target.closest("button[data-delete]");
+      if (delBtn) await deleteCourse(delBtn.dataset.delete);
+    });
+  }
+
+  if (adminCoursesPagination) {
+    adminCoursesPagination.addEventListener("click", event => {
+      const btn = event.target.closest("button[data-admin-page]");
+      if (!btn || btn.disabled) return;
+      adminCourses.page = Number(btn.dataset.adminPage);
+      loadAdminCourses();
+    });
+  }
+
+  if (adminCourseSearch) {
+    let adminSearchTimer;
+    adminCourseSearch.addEventListener("input", () => {
+      clearTimeout(adminSearchTimer);
+      adminSearchTimer = setTimeout(() => {
+        adminCourses.q = adminCourseSearch.value.trim();
+        adminCourses.page = 1;
+        loadAdminCourses();
+      }, 300);
+    });
+  }
 }
 
 // --- Tab Switching Navigation ---
@@ -1212,7 +1318,12 @@ async function loadAdminDashboard() {
       adminModelStatus.className = "badge badge-rose";
     }
 
-    await loadAdminLogs();
+    await Promise.all([
+      loadAdminLogs(),
+      loadLatencyStats(),
+      loadPipelineStatus(),
+      loadAdminCourses()
+    ]);
   } catch (err) {
     showToast("Admin access error", err.message, "error");
   } finally {
@@ -1224,29 +1335,25 @@ async function loadAdminLogs() {
   const res = await apiRequest("/admin/recommendation-logs", "GET");
   state.logs = res.logs;
 
-  // Render table rows
   if (!state.logs || state.logs.length === 0) {
     logsTbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: var(--text-muted);">No logs recorded. Query recommendations to trigger audits.</td></tr>`;
-    latencyBars.innerHTML = `<div class="chart-placeholder">No logs recorded yet. Query the model to track latencies!</div>`;
     return;
   }
 
   logsTbody.innerHTML = state.logs.map(log => {
     const date = new Date(log.timestamp + "Z").toLocaleTimeString();
+    const status = log.status_code ? ` · ${log.status_code}` : "";
     return `
       <tr>
         <td title="${escapeHtml(log.timestamp)}">${escapeHtml(date)}</td>
         <td><code>${escapeHtml(log.username || "anonymous")}</code></td>
-        <td><span class="badge ${getStrategyBadge(log.strategy)}">${escapeHtml(log.strategy)}</span></td>
+        <td><span class="badge ${getStrategyBadge(log.strategy)}">${escapeHtml(log.strategy)}</span>${escapeHtml(status)}</td>
         <td><strong>${Math.round(log.latency_ms)} ms</strong></td>
         <td title="${escapeHtml(log.history)}"><code>${escapeHtml(log.history || "empty")}</code></td>
         <td title="${escapeHtml(log.results)}"><code>${escapeHtml(log.results || "empty")}</code></td>
       </tr>
     `;
   }).join("");
-
-  // Draw latency charts
-  renderLatencyChart();
 }
 
 function getStrategyBadge(strategy) {
@@ -1257,29 +1364,466 @@ function getStrategyBadge(strategy) {
   return "badge-rose";
 }
 
-function renderLatencyChart() {
-  // Grab the last 12 log queries and display them
-  const recentLogs = [...state.logs].slice(0, 12).reverse();
+/* ======================================================================
+ * LATENCY MONITORING
+ * Percentiles are single headline numbers -> stat tiles, not a chart.
+ * Latency over time is one measure (ms) for two series -> one y-axis,
+ * two lines. Never a second axis.
+ * ====================================================================== */
 
-  if (recentLogs.length === 0) return;
+const LATENCY_SERIES = [
+  { key: "avg", label: "Average", color: "var(--viz-series-avg)" },
+  { key: "p95", label: "P95", color: "var(--viz-series-p95)" }
+];
 
-  latencyBars.innerHTML = recentLogs.map(log => {
-    // Max visual height is 150px representing 50ms latency
-    const maxVal = 50.0;
-    const height = Math.min((log.latency_ms / maxVal) * 100, 100); // percentage height
-
-    let strategyClass = "pop";
-    if (log.strategy === "bert4rec_personalized") strategyClass = "b4r";
-    if (log.strategy === "vector_similarity") strategyClass = "sim";
-
-    const timeLabel = new Date(log.timestamp + "Z").toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    const tooltip = `${log.strategy}\nLatency: ${log.latency_ms.toFixed(1)}ms\nTime: ${timeLabel}`;
-
-    return `
-      <div class="latency-bar ${strategyClass}" style="height: ${height}%;" title="${escapeHtml(tooltip)}"></div>
-    `;
-  }).join("");
+function formatMs(value) {
+  // Always milliseconds: callers render the "ms" unit themselves, so this must
+  // not switch to seconds or the unit label would contradict the number.
+  if (value === null || value === undefined) return "—";
+  return value >= 100 ? String(Math.round(value)) : value.toFixed(1);
 }
+
+async function loadLatencyStats() {
+  const hours = latencyWindowSelect ? latencyWindowSelect.value : "24";
+  const res = await apiRequest(`/admin/latency-stats?hours=${encodeURIComponent(hours)}`, "GET");
+  state.latency = res;
+  renderLatencyTiles(res.overall);
+  renderLatencyChart(res.timeseries || []);
+  renderLatencyTable(res.timeseries || []);
+}
+
+function renderLatencyTiles(overall) {
+  if (!latencyTiles) return;
+  const o = overall || {};
+
+  // Median and P50 are the same percentile; they are adjacent and marked as a
+  // pair so the duplication reads as intentional rather than as a bug.
+  const tiles = [
+    { label: "Requests", value: o.count ?? 0, unit: "" },
+    { label: "Average", value: formatMs(o.avg), unit: "ms" },
+    { label: "Median", value: formatMs(o.median), unit: "ms", paired: true },
+    { label: "P50", value: formatMs(o.p50), unit: "ms", paired: true },
+    { label: "P95", value: formatMs(o.p95), unit: "ms" },
+    { label: "P99", value: formatMs(o.p99), unit: "ms" }
+  ];
+
+  latencyTiles.innerHTML = tiles.map(t => `
+    <div class="stat-tile ${t.paired ? "stat-tile-paired" : ""}">
+      <span class="stat-tile-label">${escapeHtml(t.label)}</span>
+      <span class="stat-tile-value">${escapeHtml(String(t.value))}${
+        t.unit ? `<span class="stat-tile-unit">${escapeHtml(t.unit)}</span>` : ""
+      }</span>
+    </div>
+  `).join("");
+
+  if (latencyLegend) {
+    latencyLegend.innerHTML = LATENCY_SERIES.map(s => `
+      <span class="legend-item">
+        <span class="legend-swatch" style="background:${s.color}"></span>${escapeHtml(s.label)}
+      </span>
+    `).join("");
+  }
+}
+
+function bucketLabel(bucket) {
+  // Server buckets are "YYYY-MM-DDTHH:00" in UTC.
+  const date = new Date(`${bucket}:00Z`);
+  if (Number.isNaN(date.getTime())) return bucket;
+  return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function renderLatencyChart(series) {
+  if (!latencyChart) return;
+
+  if (!series.length) {
+    latencyChart.innerHTML = `<p class="chart-placeholder">No requests recorded in this window yet.</p>`;
+    return;
+  }
+
+  const W = 720;
+  const H = 240;
+  const pad = { top: 16, right: 18, bottom: 30, left: 46 };
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+
+  const values = series.flatMap(p => [p.avg, p.p95]).filter(v => typeof v === "number");
+  const maxVal = Math.max(...values, 1);
+  // Round the top of the scale up so ticks land on readable numbers.
+  const step = Math.pow(10, Math.floor(Math.log10(maxVal))) / 2 || 1;
+  const yMax = Math.ceil(maxVal / step) * step;
+
+  const xAt = i => pad.left + (series.length === 1 ? plotW / 2 : (i / (series.length - 1)) * plotW);
+  const yAt = v => pad.top + plotH - (v / yMax) * plotH;
+
+  const ticks = 4;
+  let gridSvg = "";
+  for (let t = 0; t <= ticks; t++) {
+    const value = (yMax / ticks) * t;
+    const y = yAt(value);
+    gridSvg += `<line class="viz-gridline" x1="${pad.left}" y1="${y}" x2="${W - pad.right}" y2="${y}" />`;
+    gridSvg += `<text class="viz-tick" x="${pad.left - 8}" y="${y + 3}" text-anchor="end">${Math.round(value)}</text>`;
+  }
+
+  // Label first / middle / last only, so ticks never collide.
+  const labelIdx = new Set([0, Math.floor((series.length - 1) / 2), series.length - 1]);
+  let xLabels = "";
+  labelIdx.forEach(i => {
+    const anchor = i === 0 ? "start" : i === series.length - 1 ? "end" : "middle";
+    xLabels += `<text class="viz-tick" x="${xAt(i)}" y="${H - 10}" text-anchor="${anchor}">${escapeHtml(bucketLabel(series[i].bucket))}</text>`;
+  });
+
+  const lines = LATENCY_SERIES.map(s => {
+    const points = series.map((p, i) => `${xAt(i).toFixed(1)},${yAt(p[s.key] || 0).toFixed(1)}`).join(" ");
+    return `<polyline class="viz-line" points="${points}" stroke="${s.color}" />`;
+  }).join("");
+
+  latencyChart.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" role="img"
+      aria-label="Latency over time: average and P95 in milliseconds">
+      ${gridSvg}
+      <line class="viz-axisline" x1="${pad.left}" y1="${pad.top + plotH}" x2="${W - pad.right}" y2="${pad.top + plotH}" />
+      ${xLabels}
+      ${lines}
+      <g id="latency-hover" style="display:none">
+        <line class="viz-crosshair" y1="${pad.top}" y2="${pad.top + plotH}" />
+        ${LATENCY_SERIES.map(s => `<circle r="5" fill="${s.color}" class="viz-marker" />`).join("")}
+      </g>
+      <rect x="${pad.left}" y="${pad.top}" width="${plotW}" height="${plotH}"
+        fill="transparent" id="latency-hitarea" />
+    </svg>
+    <div class="viz-tooltip hidden" id="latency-tooltip"></div>
+  `;
+
+  attachLatencyHover(series, xAt, yAt);
+}
+
+// A line chart in HTML is interactive by default: crosshair + tooltip.
+function attachLatencyHover(series, xAt, yAt) {
+  const svg = latencyChart.querySelector("svg");
+  const hit = latencyChart.querySelector("#latency-hitarea");
+  const hover = latencyChart.querySelector("#latency-hover");
+  const tooltip = latencyChart.querySelector("#latency-tooltip");
+  if (!svg || !hit || !hover || !tooltip) return;
+
+  const crosshair = hover.querySelector("line");
+  const markers = hover.querySelectorAll("circle");
+
+  function hide() {
+    hover.style.display = "none";
+    tooltip.classList.add("hidden");
+  }
+
+  hit.addEventListener("mousemove", event => {
+    const box = svg.getBoundingClientRect();
+    // Map client px into viewBox units.
+    const scale = 720 / box.width;
+    const vx = (event.clientX - box.left) * scale;
+
+    let nearest = 0;
+    let bestDist = Infinity;
+    series.forEach((_, i) => {
+      const dist = Math.abs(xAt(i) - vx);
+      if (dist < bestDist) {
+        bestDist = dist;
+        nearest = i;
+      }
+    });
+
+    const point = series[nearest];
+    const x = xAt(nearest);
+    crosshair.setAttribute("x1", x);
+    crosshair.setAttribute("x2", x);
+    LATENCY_SERIES.forEach((s, idx) => {
+      markers[idx].setAttribute("cx", x);
+      markers[idx].setAttribute("cy", yAt(point[s.key] || 0));
+    });
+    hover.style.display = "";
+
+    tooltip.innerHTML = `
+      <div class="viz-tooltip-time">${escapeHtml(bucketLabel(point.bucket))} · ${point.count} req</div>
+      ${LATENCY_SERIES.map(s => `
+        <div class="viz-tooltip-row">
+          <span><span class="legend-swatch" style="background:${s.color}"></span> ${escapeHtml(s.label)}</span>
+          <span class="viz-tooltip-value">${formatMs(point[s.key])} ms</span>
+        </div>
+      `).join("")}
+    `;
+    tooltip.style.left = `${(x / scale)}px`;
+    tooltip.style.top = `${(yAt(Math.max(point.avg || 0, point.p95 || 0)) / scale)}px`;
+    tooltip.classList.remove("hidden");
+  });
+
+  hit.addEventListener("mouseleave", hide);
+}
+
+// Table view: identity and values never depend on color alone.
+function renderLatencyTable(series) {
+  if (!latencyTable) return;
+  if (!series.length) {
+    latencyTable.innerHTML = `<p class="chart-placeholder">No data in this window.</p>`;
+    return;
+  }
+  latencyTable.innerHTML = `
+    <table class="viz-table">
+      <thead>
+        <tr><th>Time (UTC hour)</th><th>Requests</th><th>Average (ms)</th><th>P95 (ms)</th></tr>
+      </thead>
+      <tbody>
+        ${series.map(p => `
+          <tr>
+            <td>${escapeHtml(p.bucket)}</td>
+            <td>${p.count}</td>
+            <td>${formatMs(p.avg)}</td>
+            <td>${formatMs(p.p95)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+/* ======================================================================
+ * PIPELINE STATUS + COURSE MANAGEMENT
+ * ====================================================================== */
+
+async function loadPipelineStatus() {
+  if (!pipelineBanner) return;
+  try {
+    const status = await apiRequest("/admin/pipeline-status", "GET");
+    state.pipeline = status;
+
+    const sim = status.text_similarity || {};
+    const b4r = status.bert4rec || {};
+    const chips = [
+      { label: "Catalog", value: `${status.catalog?.courses ?? 0} courses`, action: false },
+      {
+        label: "Text similarity",
+        value: sim.pending_courses
+          ? `${sim.pending_courses} awaiting embedding`
+          : `${sim.embedding_rows ?? 0} vectors`,
+        action: Boolean(sim.action_required)
+      },
+      {
+        label: "BERT4Rec",
+        value: b4r.courses_outside_vocabulary
+          ? `${b4r.courses_outside_vocabulary} outside vocab (retrain)`
+          : `n_items ${b4r.n_items ?? 0}`,
+        action: Boolean(b4r.action_required)
+      },
+      { label: "Trending", value: "live from history", action: false }
+    ];
+
+    pipelineBanner.innerHTML = chips.map(c => `
+      <span class="pipeline-chip ${c.action ? "needs-action" : ""}"
+        ${c.action ? 'title="Action required before new courses appear here"' : ""}>
+        ${c.action ? '<i class="fa-solid fa-triangle-exclamation"></i>' : '<i class="fa-solid fa-circle-check"></i>'}
+        ${escapeHtml(c.label)}: <strong>${escapeHtml(c.value)}</strong>
+      </span>
+    `).join("");
+  } catch (err) {
+    pipelineBanner.innerHTML = "";
+    console.warn("pipeline-status unavailable:", err.message);
+  }
+}
+
+const adminCourses = { page: 1, limit: 10, q: "" };
+
+async function loadAdminCourses() {
+  if (!adminCoursesTbody) return;
+  const params = new URLSearchParams({
+    page: String(adminCourses.page),
+    limit: String(adminCourses.limit),
+    lang: state.lang
+  });
+  if (adminCourses.q) params.set("q", adminCourses.q);
+
+  try {
+    const res = await apiRequest(`/admin/courses?${params.toString()}`, "GET");
+    const courses = res.courses || [];
+
+    if (!courses.length) {
+      adminCoursesTbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">No courses found.</td></tr>`;
+      adminCoursesPagination.innerHTML = "";
+      return;
+    }
+
+    adminCoursesTbody.innerHTML = courses.map(c => {
+      const pending = c.embedding_status !== "ready";
+      const badges = [
+        pending
+          ? '<span class="badge badge-orange" title="Not in text-similarity results until the embedding job runs">embedding pending</span>'
+          : '<span class="badge badge-green">similarity ready</span>',
+        c.in_model_vocabulary
+          ? '<span class="badge badge-indigo">in BERT4Rec</span>'
+          : '<span class="badge badge-light-blue" title="Requires model retraining">awaiting retrain</span>'
+      ].join(" ");
+
+      return `
+        <tr>
+          <td><code>${c.item_idx}</code></td>
+          <td title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</td>
+          <td>${escapeHtml(c.difficulty || "—")}</td>
+          <td>${badges}</td>
+          <td class="col-actions">
+            <div class="row-actions">
+              <button class="btn-row" data-edit="${c.item_idx}"><i class="fa-solid fa-pen"></i> Edit</button>
+              <button class="btn-row btn-row-danger" data-delete="${c.item_idx}"><i class="fa-regular fa-trash-can"></i> Delete</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    renderAdminPagination(res.pagination);
+  } catch (err) {
+    showToast("Could not load courses", err.message, "error");
+  }
+}
+
+function renderAdminPagination(pagination) {
+  if (!adminCoursesPagination) return;
+  const { page, total_pages: totalPages } = pagination || {};
+  if (!totalPages || totalPages <= 1) {
+    adminCoursesPagination.innerHTML = "";
+    return;
+  }
+  adminCoursesPagination.innerHTML = `
+    <button class="page-btn" data-admin-page="${page - 1}" ${page <= 1 ? "disabled" : ""}>
+      <i class="fa-solid fa-chevron-left"></i></button>
+    <span class="page-btn page-current">${page} / ${totalPages}</span>
+    <button class="page-btn" data-admin-page="${page + 1}" ${page >= totalPages ? "disabled" : ""}>
+      <i class="fa-solid fa-chevron-right"></i></button>
+  `;
+}
+
+function openCourseModal(course = null) {
+  courseForm.reset();
+  courseItemIdx.value = course ? course.item_idx : "";
+  courseModalTitle.textContent = course ? `Edit Course #${course.item_idx}` : "Add Course";
+  btnSaveCourse.textContent = course ? "Save Changes" : "Create Course";
+
+  if (course) {
+    document.getElementById("course-title").value = course.title || "";
+    document.getElementById("course-description").value = course.description || "";
+    document.getElementById("course-theme").value = course.theme || "";
+    document.getElementById("course-software").value = course.software || "";
+    document.getElementById("course-job").value = course.job || "";
+    document.getElementById("course-type").value = course.type || "";
+    document.getElementById("course-duration").value = course.duration ?? "";
+    // Stored difficulty is "<level> - <Label>"; map back to the slug.
+    const level = String(course.difficulty || "").trim().charAt(0);
+    document.getElementById("course-difficulty").value =
+      ({ "1": "beginner", "2": "intermediate", "3": "advanced" })[level] || "";
+  }
+
+  populateCourseDatalists();
+  courseModal.classList.remove("hidden");
+}
+
+function closeCourseModal() {
+  courseModal.classList.add("hidden");
+}
+
+// Reuse the facet options already fetched for the Courses page as suggestions.
+async function populateCourseDatalists() {
+  try {
+    const res = await apiRequest(`/courses/filters?lang=${state.lang}`, "GET");
+    const fill = (id, options) => {
+      const list = document.getElementById(id);
+      if (list) {
+        list.innerHTML = (options || [])
+          .map(o => `<option value="${escapeHtml(o.label)}"></option>`)
+          .join("");
+      }
+    };
+    fill("course-theme-options", res.filters?.theme);
+    fill("course-software-options", res.filters?.software);
+    fill("course-job-options", res.filters?.job_type);
+  } catch {
+    /* suggestions are optional */
+  }
+}
+
+function courseFormPayload() {
+  const num = document.getElementById("course-duration").value;
+  return {
+    title: document.getElementById("course-title").value.trim(),
+    description: document.getElementById("course-description").value.trim() || null,
+    difficulty: document.getElementById("course-difficulty").value || null,
+    theme: document.getElementById("course-theme").value.trim() || null,
+    software: document.getElementById("course-software").value.trim() || null,
+    job_type: document.getElementById("course-job").value.trim() || null,
+    type: document.getElementById("course-type").value || null,
+    duration: num === "" ? null : Number(num)
+  };
+}
+
+async function submitCourseForm(event) {
+  event.preventDefault();
+  const itemIdx = courseItemIdx.value;
+  const payload = courseFormPayload();
+
+  if (!payload.title) {
+    showToast("Title required", "A course needs a title.", "error");
+    return;
+  }
+
+  toggleLoading(true);
+  try {
+    if (itemIdx) {
+      await apiRequest(`/admin/courses/${itemIdx}`, "PUT", payload);
+      showToast("Course updated", `Course #${itemIdx} saved.`, "success");
+    } else {
+      const res = await apiRequest("/admin/courses", "POST", payload);
+      const avail = res.recommendation_availability || {};
+      showToast(
+        "Course created",
+        avail.text_similarity
+          ? `Course #${res.item_idx} created.`
+          : `Course #${res.item_idx} created — searchable now, but needs the embedding job before it appears in similarity results.`,
+        "success"
+      );
+    }
+    closeCourseModal();
+    await Promise.all([loadAdminCourses(), loadPipelineStatus()]);
+  } catch (err) {
+    showToast("Save failed", err.message, "error");
+  } finally {
+    toggleLoading(false);
+  }
+}
+
+async function deleteCourse(itemIdx) {
+  if (!window.confirm(`Delete course #${itemIdx}? This cannot be undone.`)) return;
+
+  toggleLoading(true);
+  try {
+    await apiRequest(`/admin/courses/${itemIdx}`, "DELETE");
+    showToast("Course deleted", `Course #${itemIdx} removed.`, "success");
+  } catch (err) {
+    // The API refuses by default when the course is inside the model vocabulary,
+    // because the checkpoint keeps predicting it until retrained.
+    const forced = window.confirm(
+      `${err.message}\n\nDelete anyway?`
+    );
+    if (!forced) {
+      toggleLoading(false);
+      return;
+    }
+    try {
+      await apiRequest(`/admin/courses/${itemIdx}?force=true`, "DELETE");
+      showToast("Course deleted", `Course #${itemIdx} force-deleted.`, "info");
+    } catch (forceErr) {
+      showToast("Delete failed", forceErr.message, "error");
+      toggleLoading(false);
+      return;
+    }
+  }
+
+  await Promise.all([loadAdminCourses(), loadPipelineStatus()]);
+  toggleLoading(false);
+}
+
 
 /* ======================================================================
  * MOBILE SIDEBAR TOGGLE  (Pure UI — no backend logic touched)

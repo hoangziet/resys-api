@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import math
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from api.deps import Lang, get_lang
-from core import database
+from core import search
 from core.catalog_seed import DIFFICULTY_SLUGS
 from core.security import verify_token
 from models.catalog import catalog
@@ -28,7 +26,10 @@ _DIFFICULTY_ORDER = {slug: int(level) for level, slug in DIFFICULTY_SLUGS.items(
 
 @router.get("/")
 def list_courses(
-    q: str | None = Query(None, description="Search query matched on title/description"),
+    q: str | None = Query(
+        None, description="Free-text query; tokens are matched against title, "
+        "description, theme, software and job"
+    ),
     difficulty: list[str] = Query(default_factory=list),
     theme: list[str] = Query(default_factory=list),
     software: list[str] = Query(default_factory=list),
@@ -39,15 +40,19 @@ def list_courses(
         default_factory=list, description="Course format: tutorial, webcast, use_case"
     ),
     page: int = Query(1, ge=1, description="1-based page number"),
-    limit: int = Query(12, ge=1, le=100, description="Courses per page"),
+    limit: int = Query(
+        search.DEFAULT_LIMIT, ge=1, le=search.MAX_LIMIT, description="Courses per page"
+    ),
     lang: Lang = Depends(get_lang),
     token_data=Depends(verify_token),
 ) -> dict:
-    """Filtered, paginated course list.
+    """Search + filter + paginated course list.
 
-    Filters combine: values within one filter are OR-ed, different filters are
-    AND-ed, and an omitted filter does not restrict anything. Filtering and
-    pagination both happen in SQL - only the requested page leaves the database.
+    Search tokens AND together and each may match any of title, description,
+    theme, software or job. Filters combine: values within one filter are OR-ed,
+    different filters are AND-ed, and an omitted filter does not restrict
+    anything. Searching, filtering and pagination all happen in SQL - only the
+    requested page leaves the database.
     """
     facets = {
         "difficulty": difficulty,
@@ -57,7 +62,7 @@ def list_courses(
         "type": type,
     }
 
-    rows, total = database.query_courses(
+    rows, total = search.search_courses(
         lang=lang, q=q, facets=facets, page=page, limit=limit
     )
 
@@ -67,7 +72,7 @@ def list_courses(
             "page": page,
             "limit": limit,
             "total": total,
-            "total_pages": math.ceil(total / limit) if total else 0,
+            "total_pages": search.total_pages(total, limit),
         },
         "lang": lang,
     }
@@ -86,7 +91,7 @@ def list_filters(
     refetch this when the display language changes and drop selections that no
     longer appear. Difficulty slugs are language-independent.
     """
-    options = database.get_facet_options(lang)
+    options = search.get_facet_options(lang)
 
     grouped: dict[str, list[dict]] = {param: [] for param in FACET_PARAMS}
     kind_to_param = {kind: param for param, kind in FACET_PARAMS.items()}

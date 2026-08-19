@@ -2965,3 +2965,462 @@ a:hover {
   padding: 0 4px;
   color: var(--text-muted);
 }
+
+/* ==========================================================================
+   Admin monitoring: stat tiles + latency chart
+   Series colors are the validated categorical slots 1 and 2 (blue/orange).
+   They are NOT the app accent tokens: indigo and blue sit too close in hue to
+   be safely distinguishable, and adjacent-pair CVD separation is a measured
+   property, not a judgement call.
+   ========================================================================== */
+
+/* Follows the project convention: :root carries the dark (default) values,
+   [data-theme="light"] overrides them. */
+:root .admin-card {
+  --viz-series-avg: #3987e5;
+  --viz-series-p95: #d95926;
+  --viz-grid: rgba(255, 255, 255, 0.08);
+  --viz-axis: rgba(255, 255, 255, 0.18);
+}
+
+[data-theme="light"] .admin-card {
+  --viz-series-avg: #2a78d6;
+  --viz-series-p95: #eb6834;
+  --viz-grid: rgba(11, 11, 11, 0.09);
+  --viz-axis: rgba(11, 11, 11, 0.22);
+}
+
+.admin-card-wide {
+  grid-column: 1 / -1;
+}
+
+.card-head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.card-head-row h3 {
+  margin: 0;
+}
+
+.inline-select,
+.inline-input {
+  background: var(--surface-tint);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  font-size: 0.86rem;
+  outline: none;
+}
+
+.inline-input {
+  width: 100%;
+}
+
+.inline-select:focus,
+.inline-input:focus {
+  border-color: var(--glass-border-focus);
+}
+
+.admin-search-row {
+  margin-bottom: 14px;
+}
+
+/* --- Stat tiles: single headline numbers, no plot --- */
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(128px, 1fr));
+  gap: 12px;
+}
+
+.stat-tile {
+  background: var(--surface-tint);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+
+.stat-tile-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--text-muted);
+}
+
+.stat-tile-value {
+  display: block;
+  margin-top: 6px;
+  font-size: 1.55rem;
+  font-weight: 700;
+  /* Text keeps text tokens; series color never leaks into numbers. */
+  color: var(--text-primary);
+  line-height: 1.1;
+}
+
+.stat-tile-unit {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-left: 3px;
+}
+
+.stat-tile-paired {
+  border-color: var(--border-tint-strong);
+}
+
+.stat-note {
+  margin: 12px 0 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+/* --- Latency chart --- */
+.viz-block {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--divider-tint);
+}
+
+.viz-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.viz-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.viz-unit {
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.viz-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.viz-legend {
+  display: flex;
+  gap: 14px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.viz-legend span.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-swatch {
+  width: 12px;
+  height: 3px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.btn-ghost-sm {
+  background: transparent;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.btn-ghost-sm:hover {
+  color: var(--text-primary);
+  border-color: var(--border-tint-strong);
+}
+
+.viz-surface {
+  position: relative;
+  width: 100%;
+}
+
+.viz-surface svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.viz-gridline {
+  stroke: var(--viz-grid);
+  stroke-width: 1;
+}
+
+.viz-axisline {
+  stroke: var(--viz-axis);
+  stroke-width: 1;
+}
+
+.viz-tick {
+  fill: var(--text-muted);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.viz-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.viz-crosshair {
+  stroke: var(--viz-axis);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+/* 2px surface ring keeps overlapping markers separable */
+.viz-marker {
+  stroke: var(--bg-secondary);
+  stroke-width: 2;
+}
+
+.viz-tooltip {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+  min-width: 132px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-tint-strong);
+  border-radius: var(--radius-sm);
+  padding: 9px 11px;
+  font-size: 0.78rem;
+  color: var(--text-primary);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  transform: translate(-50%, -110%);
+}
+
+.viz-tooltip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.viz-tooltip-time {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.viz-tooltip-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.viz-table-wrapper {
+  margin-top: 14px;
+  max-height: 260px;
+  overflow: auto;
+}
+
+.viz-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.viz-table th,
+.viz-table td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--divider-tint);
+  font-variant-numeric: tabular-nums;
+}
+
+.viz-table th {
+  color: var(--text-muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  font-size: 0.68rem;
+  letter-spacing: 0.6px;
+}
+
+/* --- Pipeline banner + admin course table --- */
+.pipeline-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.pipeline-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-tint);
+  border: 1px solid var(--glass-border);
+  font-size: 0.79rem;
+  color: var(--text-secondary);
+}
+
+.pipeline-chip strong {
+  color: var(--text-primary);
+}
+
+.pipeline-chip.needs-action {
+  border-color: var(--color-orange);
+  color: var(--text-primary);
+}
+
+.col-actions {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.row-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.btn-row {
+  background: var(--surface-tint);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  padding: 5px 10px;
+  font-size: 0.76rem;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.btn-row:hover {
+  color: var(--text-primary);
+  border-color: var(--border-tint-strong);
+}
+
+.btn-row-danger:hover {
+  color: var(--color-rose);
+  border-color: var(--color-rose);
+}
+
+/* --- Course form modal --- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(4, 3, 10, 0.62);
+  backdrop-filter: blur(3px);
+}
+
+.modal-container {
+  width: min(680px, 100%);
+  max-height: 88vh;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.42);
+}
+
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--divider-tint);
+}
+
+.modal-head h3 {
+  margin: 0;
+}
+
+.modal-body {
+  padding: 22px 24px 24px;
+}
+
+.form-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 16px;
+}
+
+.form-field label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+
+.form-field input,
+.form-field textarea,
+.form-field select {
+  background: var(--surface-tint);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  padding: 10px 13px;
+  font-size: 0.9rem;
+  font-family: inherit;
+  outline: none;
+  transition: var(--transition-fast);
+}
+
+.form-field input:focus,
+.form-field textarea:focus,
+.form-field select:focus {
+  border-color: var(--glass-border-focus);
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.14);
+}
+
+.form-field textarea {
+  resize: vertical;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0 16px;
+}
+
+.form-hint {
+  margin: 4px 0 20px;
+  font-size: 0.79rem;
+  color: var(--text-muted);
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  line-height: 1.5;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}

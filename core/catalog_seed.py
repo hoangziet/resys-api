@@ -44,6 +44,14 @@ DIFFICULTY_SLUGS: dict[str, str] = {
     "3": "advanced",
 }
 
+# Canonical stored label for an admin-supplied difficulty slug. Written to both
+# catalogs so facet_slug() derives the same slug back out.
+DIFFICULTY_LABELS: dict[str, str] = {
+    "beginner": "1 - Beginner",
+    "intermediate": "2 - Intermediate",
+    "advanced": "3 - Advanced",
+}
+
 _SLUG_STRIP_RE = re.compile(r"[^a-z0-9]+")
 
 
@@ -229,6 +237,70 @@ def split_facet_values(raw: str | None) -> list[str]:
     return [part.strip() for part in raw.split(",") if part.strip()]
 
 
+_FACET_INSERT_SQL = (
+    "INSERT OR REPLACE INTO course_facets "
+    '("item_idx", "kind", "lang", "slug", "label") VALUES (?, ?, ?, ?, ?)'
+)
+
+
+def _facet_rows_for(
+    row: sqlite3.Row, lang: str, seen_slugs: dict[tuple[str, str, str], str] | None = None
+) -> list[tuple[Any, ...]]:
+    """Expand one course row into its course_facets rows."""
+    item_idx = int(row["item_idx"])
+    rows: list[tuple[Any, ...]] = []
+    for kind in FACET_COLUMNS:
+        for label in split_facet_values(row[kind]):
+            slug = facet_slug(kind, label)
+            if slug is None:
+                continue
+
+            # Two different labels collapsing to one slug would silently merge
+            # distinct filter values - surface it instead.
+            if seen_slugs is not None:
+                key = (kind, lang, slug)
+                previous = seen_slugs.get(key)
+                if previous is None:
+                    seen_slugs[key] = label
+                elif previous != label and kind != "difficulty":
+                    log.warning(
+                        "Facet slug collision: %s/%s slug %r from both %r and %r",
+                        kind,
+                        lang,
+                        slug,
+                        previous,
+                        label,
+                    )
+            rows.append((item_idx, kind, lang, slug, label))
+    return rows
+
+
+def _facet_select_sql(table: str, where: str = "") -> str:
+    quoted = ", ".join(f'"{column}"' for column in FACET_COLUMNS)
+    return f'SELECT "item_idx", {quoted} FROM {table}{where}'
+
+
+def rebuild_facets_for_item(cursor: sqlite3.Cursor, item_idx: int) -> int:
+    """Rebuild course_facets for a single course, after a create or update.
+
+    Cheaper than a full rebuild and enough for admin CRUD, since facets for one
+    course depend only on that course's rows. The caller commits.
+    """
+    cursor.execute("DELETE FROM course_facets WHERE item_idx = ?", (item_idx,))
+
+    rows: list[tuple[Any, ...]] = []
+    for table, lang in (("courses", "fr"), ("courses_en", "en")):
+        row = cursor.execute(
+            _facet_select_sql(table, " WHERE item_idx = ?"), (item_idx,)
+        ).fetchone()
+        if row is not None:
+            rows += _facet_rows_for(row, lang)
+
+    if rows:
+        cursor.executemany(_FACET_INSERT_SQL, rows)
+    return len(rows)
+
+
 def rebuild_course_facets(cursor: sqlite3.Cursor) -> int:
     """Rebuild course_facets from courses (fr) and courses_en (en).
 
@@ -239,43 +311,16 @@ def rebuild_course_facets(cursor: sqlite3.Cursor) -> int:
 
     rows: list[tuple[Any, ...]] = []
     seen_slugs: dict[tuple[str, str, str], str] = {}
-    quoted = ", ".join(f'"{column}"' for column in FACET_COLUMNS)
 
     for table, lang in (("courses", "fr"), ("courses_en", "en")):
-        for row in cursor.execute(f'SELECT "item_idx", {quoted} FROM {table}').fetchall():
-            item_idx = int(row["item_idx"])
-            for kind in FACET_COLUMNS:
-                for label in split_facet_values(row[kind]):
-                    slug = facet_slug(kind, label)
-                    if slug is None:
-                        continue
-
-                    # Two different labels collapsing to one slug would silently
-                    # merge distinct filter values - surface it instead.
-                    key = (kind, lang, slug)
-                    previous = seen_slugs.get(key)
-                    if previous is None:
-                        seen_slugs[key] = label
-                    elif previous != label and kind != "difficulty":
-                        log.warning(
-                            "Facet slug collision: %s/%s slug %r from both %r and %r",
-                            kind,
-                            lang,
-                            slug,
-                            previous,
-                            label,
-                        )
-                    rows.append((item_idx, kind, lang, slug, label))
+        for row in cursor.execute(_facet_select_sql(table)).fetchall():
+            rows += _facet_rows_for(row, lang, seen_slugs)
 
     if not rows:
         log.warning("No course facets derived; course tables may be empty")
         return 0
 
-    cursor.executemany(
-        "INSERT OR REPLACE INTO course_facets "
-        '("item_idx", "kind", "lang", "slug", "label") VALUES (?, ?, ?, ?, ?)',
-        rows,
-    )
+    cursor.executemany(_FACET_INSERT_SQL, rows)
     log.info(
         "Rebuilt course_facets: %d rows, %d distinct (kind, lang, slug)",
         len(rows),

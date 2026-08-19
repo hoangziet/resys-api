@@ -6,7 +6,6 @@ from api.deps import Lang, get_lang
 from core import database
 from core.security import verify_token
 from models.catalog import catalog
-from models.embeddings import item_embeddings
 
 router = APIRouter(prefix="/history", tags=["history"])
 
@@ -26,7 +25,10 @@ def get_history(
 
 @router.post("/")
 def add_history_item(item_idx: int, token_data=Depends(verify_token)) -> dict:
-    if item_idx not in item_embeddings.item_idx_set:
+    # Validated against the catalog, not the model vocabulary: history is
+    # application data, so any real course can be marked as learned. Projection
+    # onto what BERT4Rec can consume happens in api/recommendations.model_history.
+    if not database.course_exists(item_idx):
         raise HTTPException(
             status_code=404, detail=f"Course with item_idx {item_idx} not found"
         )

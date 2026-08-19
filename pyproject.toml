@@ -18,6 +18,14 @@ dependencies = [
     "uvicorn[standard]>=0.51.0",
 ]
 
+[project.optional-dependencies]
+# Only needed to run scripts/generate_embeddings.py, which appends text
+# embeddings for admin-created courses. Deliberately not a runtime dependency:
+# it pulls transformers/tokenizers and downloads the encoder weights.
+embeddings = [
+    "sentence-transformers>=3.0.0",
+]
+
 [[tool.uv.index]]
 url = "https://download.pytorch.org/whl/cpu"
 

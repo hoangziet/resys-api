@@ -18,6 +18,7 @@ from api.history import router as history_router
 from api.recommendations import router as recommendations_router
 from core import database
 from core.config import settings
+from core.monitoring import RecommendationMetricsMiddleware
 from core.rate_limit import limiter
 from models.catalog import catalog
 
@@ -45,6 +46,8 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(CacheControlMiddleware)
+    # Measures every /recommendations request, including failures.
+    app.add_middleware(RecommendationMetricsMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
