@@ -117,7 +117,7 @@
             <div class="form-group">
               <label for="register-password"><i class="fa-solid fa-lock"></i> Password</label>
               <div class="password-input-wrapper">
-                <input type="password" id="register-password" placeholder="At least 6 characters" required minlength="6"
+                <input type="password" id="register-password" placeholder="At least 8 characters" required minlength="6"
                   autocomplete="new-password" />
                 <button type="button" class="btn-toggle-password" data-target="register-password" tabindex="-1"
                   aria-label="Show password">
@@ -525,22 +525,19 @@
 
             <div class="form-field">
               <label for="course-theme">Theme</label>
-              <input type="text" id="course-theme" list="course-theme-options"
-                placeholder="Organize, Produce" />
+              <input type="text" id="course-theme" list="course-theme-options" placeholder="Organize, Produce" />
               <datalist id="course-theme-options"></datalist>
             </div>
 
             <div class="form-field">
               <label for="course-software">Software</label>
-              <input type="text" id="course-software" list="course-software-options"
-                placeholder="Excel, Teams" />
+              <input type="text" id="course-software" list="course-software-options" placeholder="Excel, Teams" />
               <datalist id="course-software-options"></datalist>
             </div>
 
             <div class="form-field">
               <label for="course-job">Job Type</label>
-              <input type="text" id="course-job" list="course-job-options"
-                placeholder="Assistant, Project Manager" />
+              <input type="text" id="course-job" list="course-job-options" placeholder="Assistant, Project Manager" />
               <datalist id="course-job-options"></datalist>
             </div>
 
@@ -609,7 +606,7 @@
   </div>
 
   <!-- Custom Scripts -->
-  <script src="/assets/app.js"></script>
+  <script type="module" src="assets/js/app.js"></script>
 </body>
 
 </html>
