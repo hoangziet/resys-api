@@ -107,12 +107,8 @@ def list_filters(
             }
         )
 
-    for param, values in grouped.items():
-        if param == "difficulty":
-            values.sort(key=lambda v: _DIFFICULTY_ORDER.get(v["value"], 99))
-        else:
-            values.sort(key=lambda v: (-v["count"], v["label"]))
-
+    for _, values in grouped.items():
+        values.sort(key=lambda v: v["label"].lower())
     return {"lang": lang, "filters": grouped}
 
 
