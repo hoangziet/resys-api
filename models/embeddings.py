@@ -95,7 +95,7 @@ class ItemEmbeddings:
 
     def has_embedding(self, item_idx: int) -> bool:
         """Whether this course can be used for vector similarity."""
-        return 1 <= item_idx <= self.max_embedding_idx and item_idx in self.item_idx_set
+        return 1 <= item_idx <= self.max_embedding_idx
 
     def similar_items(self, item_idx: int, top_k: int = 10) -> list[tuple[int, float]]:
         if item_idx not in self.item_idx_set:
