@@ -1,19 +1,15 @@
 name: CI/CD
 
 on:
-  pull_request:
-    branches:
-      - main
-      - develop
   push:
     branches:
       - main
-      - develop
 
 jobs:
   test:
     name: Test and lint
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -54,6 +50,7 @@ jobs:
     name: Docker build
     runs-on: ubuntu-latest
     needs: test
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -65,13 +62,13 @@ jobs:
     name: Deploy to VPS
     runs-on: ubuntu-latest
     needs: docker-build
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+
     env:
-      DEPLOY_BRANCH: ${{ github.ref_name }}
       VPS_HOST: ${{ secrets.VPS_HOST }}
       VPS_USER: ${{ secrets.VPS_USER }}
       VPS_APP_DIR: ${{ secrets.VPS_APP_DIR }}
       VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+
     steps:
       - name: Validate deploy secrets
         run: |
@@ -87,12 +84,13 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
-      - name: Free Docker space on VPS
-        run: |
-          ssh -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" \
-            "docker system prune -af --volumes"
-            
       - name: Deploy
         run: |
           ssh -i ~/.ssh/deploy_key "$VPS_USER@$VPS_HOST" \
-            "set -eu; cd '$VPS_APP_DIR'; git fetch --prune origin; git checkout '$DEPLOY_BRANCH'; git reset --hard '$GITHUB_SHA'; docker compose up --build -d; docker compose ps"
+            "set -eu;
+             cd '$VPS_APP_DIR';
+             git fetch --prune origin;
+             git checkout main;
+             git reset --hard '$GITHUB_SHA';
+             docker compose up --build -d --remove-orphans;
+             docker compose ps"
