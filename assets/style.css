@@ -58,6 +58,7 @@
   --placeholder-grad-end: #0f0c1e;
 
   /* Theme-aware surface / tint tokens ====== */
+  --surface: rgba(255, 255, 255, 0.02);
   --surface-tint: rgba(255, 255, 255, 0.035);
   --surface-tint-hover: rgba(255, 255, 255, 0.065);
   --surface-tint-strong: rgba(255, 255, 255, 0.13);
@@ -109,6 +110,7 @@
   --placeholder-grad-end: #dfe3f7;
 
   /* ====== Light-mode surface / tint tokens ====== */
+  --surface: rgba(20, 20, 40, 0.02);
   --surface-tint: rgba(20, 20, 40, 0.04);
   --surface-tint-hover: rgba(20, 20, 40, 0.07);
   --surface-tint-strong: rgba(20, 20, 40, 0.1);
@@ -1588,14 +1590,15 @@ a:hover {
     linear-gradient(155deg, rgba(139, 92, 246, 0.08), transparent 40%),
     var(--glass-bg);
   border: 1px solid var(--glass-border);
-  padding: 28px;
+  padding: 26px 28px;
   border-radius: var(--radius-lg);
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 18px;
   box-shadow: var(--shadow-soft);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
+  /* dropdown facet cần tràn ra ngoài panel */
 }
 
 .search-panel::before {
@@ -1606,6 +1609,10 @@ a:hover {
   right: 6%;
   height: 1px;
   background: linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.6), rgba(59, 130, 246, 0.6), transparent);
+}
+
+.search-panel>.search-bar-wrapper {
+  margin-bottom: 0;
 }
 
 .search-bar-wrapper {
@@ -1684,7 +1691,7 @@ a:hover {
 
 .search-filters {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
   gap: 16px;
 }
 
@@ -1753,6 +1760,9 @@ a:hover {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  padding-top: 2px;
+  border-top: 1px solid var(--divider-tint-subtle);
+  padding-top: 14px;
 }
 
 .search-results-info::before {
@@ -2584,10 +2594,6 @@ a:hover {
     grid-template-columns: 1fr;
   }
 
-  .search-filters {
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  }
-
   .welcome-banner {
     padding: 24px;
   }
@@ -2749,7 +2755,7 @@ a:hover {
   }
 
   .search-filters {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
   }
 
   .history-controls {
@@ -2806,53 +2812,159 @@ a:hover {
    Server-driven filtering: each group is a checkbox list from
    GET /courses/filters, and the pager reflects the API's pagination metadata.
    ========================================================================== */
-
 .facet-panel {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 20px;
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: 1px solid var(--divider-tint);
+  position: relative;
+  margin-top: 0;
+}
+
+.facet-input-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 46px;
+  padding: 7px 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  background: var(--surface-tint);
+  cursor: text;
+  transition: var(--transition-fast);
+}
+
+.facet-input-wrap:hover {
+  border-color: var(--border-tint-hover);
+}
+
+.facet-input-wrap:focus-within,
+.facet-input-wrap.open {
+  border-color: var(--color-indigo);
+  background: var(--surface-tint-hover);
+  box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.12);
+}
+
+
+.facet-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 8px 5px 11px;
+  background: var(--color-indigo-glow);
+  color: var(--text-primary);
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.facet-tag:hover {
+  background: rgba(244, 63, 94, 0.14);
+  color: var(--color-rose);
+}
+
+.facet-tag-x {
+  font-size: 0.85rem;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.facet-tag:hover .facet-tag-x {
+  opacity: 1;
+}
+
+.facet-tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 0;
+}
+
+.facet-tag-remove:hover {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.facet-search {
+  flex: 1 1 120px;
+  min-width: 120px;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  padding: 6px 4px;
+}
+
+.facet-search::placeholder {
+  color: var(--text-muted);
+}
+
+.facet-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  z-index: 20;
+  max-height: 360px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  background: var(--overlay-strong);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-premium);
+}
+
+.facet-dropdown[hidden] {
+  display: none;
+}
+
+.facet-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.facet-dropdown::-webkit-scrollbar-thumb {
+  background: var(--surface-tint-strong);
+  border-radius: 3px;
 }
 
 .facet-group {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-width: 0;
+  gap: 4px;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--divider-tint-subtle);
+}
+
+.facet-group:last-child {
+  border-bottom: none;
 }
 
 .facet-title {
-  margin: 0;
+  margin: 0 0 2px;
   font-size: 0.72rem;
   font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.7px;
-  padding-left: 4px;
+  padding-left: 6px;
 }
 
 .facet-options {
   display: flex;
   flex-direction: column;
   gap: 2px;
-}
-
-/* Theme/software/job have dozens of values, so cap the height and scroll. */
-.facet-scroll {
-  max-height: 220px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.facet-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-
-.facet-scroll::-webkit-scrollbar-thumb {
-  background: var(--surface-tint-strong);
-  border-radius: 3px;
 }
 
 .facet-option {
@@ -2894,6 +3006,7 @@ a:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  text-transform: capitalize;
 }
 
 .facet-count {

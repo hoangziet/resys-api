@@ -6,7 +6,7 @@
 import { state } from "./state.js";
 import { FACET_KEYS } from "./config.js";
 import { apiRequest, withLang, clearRecoCache } from "./api.js";
-import { toggleLoading, setButtonBusy, showToast } from "./ui.js";
+import { toggleLoading, setButtonBusy, showToast, initMobileSidebar } from "./ui.js";
 import { switchTab } from "./navigation.js";
 import { switchAuthMode, updatePasswordStrength } from "./auth.js";
 import { toggleTheme } from "./theme.js";
@@ -182,21 +182,20 @@ export function setupEventListeners() {
     facetPanel.addEventListener("change", event => {
         const input = event.target;
         if (!input.matches('input[type="checkbox"][data-facet]')) return;
-
         const key = input.dataset.facet;
         const selected = courseQuery.selected[key];
         if (!selected) return;
-
         const at = selected.indexOf(input.value);
         if (input.checked && at === -1) selected.push(input.value);
         else if (!input.checked && at !== -1) selected.splice(at, 1);
-
-        filtersClearBtn.classList.toggle("hidden", countSelectedFilters() === 0);
+        renderFacetOptions();               // cập nhật lại tag + đếm số filter
         resetToFirstPageAndSearch();
     });
 
     filtersClearBtn.addEventListener("click", () => {
         for (const key of FACET_KEYS) courseQuery.selected[key] = [];
+        const search = document.getElementById("facet-search");
+        if (search) search.value = "";
         renderFacetOptions();
         resetToFirstPageAndSearch();
     });
@@ -372,4 +371,11 @@ export function setupEventListeners() {
             }, 300);
         });
     }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        requestAnimationFrame(() => {
+            initMobileSidebar();
+        });
+    });
 }
+

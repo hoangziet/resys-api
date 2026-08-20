@@ -1,6 +1,6 @@
 // -------------------------------------------------------------
 // SEARCH.JS
-// Course search, facet filters, pagination.
+// Course search, facet filters (multi-select dropdown + search), pagination.
 // -------------------------------------------------------------
 
 import { state } from "./state.js";
@@ -14,11 +14,21 @@ import {
 import { renderSkeletons, escapeHtml } from "./utils.js";
 import { renderCourseCards } from "./recommendations.js";
 
+const FACET_LABELS = {
+    difficulty: "Difficulty",
+    theme: "Theme",
+    software: "Software",
+    job_type: "Job type",
+    type: "Type",
+};
+
 export const courseQuery = {
     page: 1,
     selected: { difficulty: [], theme: [], software: [], job_type: [], type: [] },
     options: {}
 };
+
+let facetUIInitialized = false;
 
 export function buildCourseQueryString() {
     const params = new URLSearchParams();
@@ -37,31 +47,163 @@ export function countSelectedFilters() {
     return FACET_KEYS.reduce((n, key) => n + courseQuery.selected[key].length, 0);
 }
 
-export function renderFacetOptions() {
-    for (const key of FACET_KEYS) {
-        const container = document.getElementById(`facet-${key}`);
-        if (!container) continue;
-        const options = courseQuery.options[key] || [];
+// --- Build the dropdown shell once (input wrap + tags + dropdown panel) ---
+function ensureFacetShell() {
+    if (facetUIInitialized) return;
 
-        if (options.length === 0) {
-            container.innerHTML = `<p class="facet-empty">No values</p>`;
-            continue;
+    facetPanel.innerHTML = `
+        <div class="facet-input-wrap" id="facet-input-wrap">
+            <div class="facet-tags" id="facet-tags"></div>
+            <input type="text" id="facet-search" class="facet-search"
+                   placeholder="Filter courses" autocomplete="off" />
+        </div>
+        <div class="facet-dropdown" id="facet-dropdown" hidden></div>
+    `;
+    facetUIInitialized = true;
+    bindFacetUIEvents();
+}
+
+function openFacetDropdown() {
+    const wrap = document.getElementById("facet-input-wrap");
+    const dropdown = document.getElementById("facet-dropdown");
+    if (!wrap || !dropdown) return;
+    dropdown.hidden = false;
+    wrap.classList.add("open");
+}
+
+function closeFacetDropdown() {
+    const wrap = document.getElementById("facet-input-wrap");
+    const dropdown = document.getElementById("facet-dropdown");
+    if (!wrap || !dropdown) return;
+    dropdown.hidden = true;
+    wrap.classList.remove("open");
+}
+
+function bindFacetUIEvents() {
+    const wrap = document.getElementById("facet-input-wrap");
+    const search = document.getElementById("facet-search");
+
+    wrap.addEventListener("click", () => search.focus());
+
+    search.addEventListener("focus", () => {
+        renderFacetOptions(search.value);
+        openFacetDropdown();
+    });
+
+    search.addEventListener("input", () => {
+        renderFacetOptions(search.value);
+        openFacetDropdown();
+    });
+
+    search.addEventListener("keydown", e => {
+        if (e.key === "Escape") {
+            search.blur();
+            closeFacetDropdown();
         }
+        // Backspace on empty search removes the last selected tag.
+        if (e.key === "Backspace" && search.value === "") {
+            for (let i = FACET_KEYS.length - 1; i >= 0; i--) {
+                const key = FACET_KEYS[i];
+                if (courseQuery.selected[key].length > 0) {
+                    courseQuery.selected[key].pop();
+                    renderFacetOptions();
+                    resetToFirstPageAndSearch();
+                    break;
+                }
+            }
+        }
+    });
 
-        container.innerHTML = options.map(opt => {
+    document.addEventListener("click", e => {
+        if (!facetPanel.contains(e.target)) closeFacetDropdown();
+    });
+
+    // Remove a selected tag by clicking the tag itself.
+    facetPanel.addEventListener("click", e => {
+        const tag = e.target.closest(".facet-tag");
+        if (!tag) return;
+        e.stopPropagation();
+        const { facet: key, value } = tag.dataset;
+        const selected = courseQuery.selected[key];
+        if (!selected) return;
+        const at = selected.indexOf(value);
+        if (at !== -1) selected.splice(at, 1);
+        renderFacetOptions();
+        resetToFirstPageAndSearch();
+    });
+
+    facetPanel.addEventListener("keydown", e => {
+        const tag = e.target.closest(".facet-tag");
+        if (!tag) return;
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        tag.click();
+    });
+}
+
+function renderFacetTags() {
+    const tagsContainer = document.getElementById("facet-tags");
+    if (!tagsContainer) return;
+
+    let html = "";
+    for (const key of FACET_KEYS) {
+        const options = courseQuery.options[key] || [];
+        for (const value of courseQuery.selected[key]) {
+            const opt = options.find(o => o.value === value);
+            const label = opt ? opt.label : value;
+            html += `
+                <span class="facet-tag" data-facet="${key}" data-value="${escapeHtml(value)}"
+                    role="button" tabindex="0"
+                    title="Bỏ chọn ${escapeHtml(label)}">
+                    ${escapeHtml(label)}
+                    <span class="facet-tag-x" aria-hidden="true">×</span>
+                </span>`;
+        }
+    }
+    tagsContainer.innerHTML = html;
+}
+
+// filterText: pass explicitly (e.g. from the search input), or omit to
+// reuse whatever is currently typed in #facet-search.
+export function renderFacetOptions(filterText) {
+    ensureFacetShell();
+
+    const dropdown = document.getElementById("facet-dropdown");
+    const searchEl = document.getElementById("facet-search");
+    const norm = (filterText ?? searchEl?.value ?? "").trim().toLowerCase();
+
+    let html = "";
+    for (const key of FACET_KEYS) {
+        const options = courseQuery.options[key] || [];
+        const filtered = norm
+            ? options.filter(opt =>
+                opt.label.toLowerCase().includes(norm) ||
+                opt.value.toLowerCase().includes(norm))
+            : options;
+
+        if (filtered.length === 0) continue;
+
+        html += `
+            <div class="facet-group">
+                <p class="facet-title">${escapeHtml(FACET_LABELS[key] || key)}</p>
+                <div class="facet-options" id="facet-${key}">
+                    ${filtered.map(opt => {
             const checked = courseQuery.selected[key].includes(opt.value) ? "checked" : "";
             const id = `facet-${key}-${opt.value}`;
             return `
-        <label class="facet-option" for="${escapeHtml(id)}">
-          <input type="checkbox" id="${escapeHtml(id)}" data-facet="${key}"
-            value="${escapeHtml(opt.value)}" ${checked} />
-          <span class="facet-label" title="${escapeHtml(opt.label)}">${escapeHtml(opt.label)}</span>
-          <span class="facet-count">${opt.count}</span>
-        </label>
-      `;
-        }).join("");
+                            <label class="facet-option" for="${escapeHtml(id)}">
+                                <input type="checkbox" id="${escapeHtml(id)}" data-facet="${key}"
+                                    value="${escapeHtml(opt.value)}" ${checked} />
+                                <span class="facet-label" title="${escapeHtml(opt.label)}">${escapeHtml(opt.label)}</span>
+                                <span class="facet-count">${opt.count}</span>
+                            </label>`;
+        }).join("")}
+                </div>
+            </div>`;
     }
 
+    dropdown.innerHTML = html || `<p class="facet-empty">No matching options</p>`;
+    renderFacetTags();
     filtersClearBtn.classList.toggle("hidden", countSelectedFilters() === 0);
 }
 
