@@ -92,40 +92,198 @@ export async function loadAdminLogs() {
     }).join("");
 }
 
-// --- TODO: Paste the remaining functions from your cut-off code here ---
-// These functions were in the [...] portion of your paste:
-
 export async function loadLatencyStats() {
-    // TODO: Paste your original loadLatencyStats implementation
-    console.warn("loadLatencyStats — paste original implementation");
+    const hours = latencyWindowSelect ? latencyWindowSelect.value : "24";
+    const res = await apiRequest(`/admin/latency-stats?hours=${encodeURIComponent(hours)}`, "GET");
+    state.latency = res;
+    renderLatencyTiles(res.overall);
+    renderLatencyChart(res.timeseries || []);
+    renderLatencyTable(res.timeseries || []);
 }
 
 export async function loadPipelineStatus() {
-    // TODO: Paste your original loadPipelineStatus implementation
-    console.warn("loadPipelineStatus — paste original implementation");
+    if (!pipelineBanner) return;
+    try {
+        const status = await apiRequest("/admin/pipeline-status", "GET");
+        state.pipeline = status;
+
+        const sim = status.text_similarity || {};
+        const b4r = status.bert4rec || {};
+        const chips = [
+            { label: "Catalog", value: `${status.catalog?.courses ?? 0} courses`, action: false },
+            {
+                label: "Text similarity",
+                value: sim.pending_courses
+                    ? `${sim.pending_courses} awaiting embedding`
+                    : `${sim.embedding_rows ?? 0} vectors`,
+                action: Boolean(sim.action_required)
+            },
+            {
+                label: "BERT4Rec",
+                value: b4r.courses_outside_vocabulary
+                    ? `${b4r.courses_outside_vocabulary} outside vocab (retrain)`
+                    : `n_items ${b4r.n_items ?? 0}`,
+                action: Boolean(b4r.action_required)
+            },
+            { label: "Trending", value: "live from history", action: false }
+        ];
+
+        pipelineBanner.innerHTML = chips.map(c => `
+      <span class="pipeline-chip ${c.action ? "needs-action" : ""}"
+        ${c.action ? 'title="Action required before new courses appear here"' : ""}>
+        ${c.action ? '<i class="fa-solid fa-triangle-exclamation"></i>' : '<i class="fa-solid fa-circle-check"></i>'}
+        ${escapeHtml(c.label)}: <strong>${escapeHtml(c.value)}</strong>
+      </span>
+    `).join("");
+    } catch (err) {
+        pipelineBanner.innerHTML = "";
+        console.warn("pipeline-status unavailable:", err.message);
+    }
 }
 
 export async function loadAdminCourses() {
-    // TODO: Paste your original loadAdminCourses implementation
-    console.warn("loadAdminCourses — paste original implementation");
+    if (!adminCoursesTbody) return;
+    const params = new URLSearchParams({
+        page: String(adminCourses.page),
+        limit: String(adminCourses.limit),
+        lang: state.lang
+    });
+    if (adminCourses.q) params.set("q", adminCourses.q);
+
+    try {
+        const res = await apiRequest(`/admin/courses?${params.toString()}`, "GET");
+        const courses = res.courses || [];
+
+        if (!courses.length) {
+            adminCoursesTbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:var(--text-muted);">No courses found.</td></tr>`;
+            adminCoursesPagination.innerHTML = "";
+            return;
+        }
+
+        adminCoursesTbody.innerHTML = courses.map(c => {
+            const pending = c.embedding_status !== "ready";
+            const badges = [
+                pending
+                    ? '<span class="badge badge-orange" title="Not in text-similarity results until the embedding job runs">embedding pending</span>'
+                    : '<span class="badge badge-green">similarity ready</span>',
+                c.in_model_vocabulary
+                    ? '<span class="badge badge-indigo">in BERT4Rec</span>'
+                    : '<span class="badge badge-light-blue" title="Requires model retraining">awaiting retrain</span>'
+            ].join(" ");
+
+            return `
+        <tr>
+          <td><code>${c.item_idx}</code></td>
+          <td title="${escapeHtml(c.title)}">${escapeHtml(c.title)}</td>
+          <td>${escapeHtml(c.difficulty || "—")}</td>
+          <td>${badges}</td>
+          <td class="col-actions">
+            <div class="row-actions">
+              <button class="btn-row" data-edit="${c.item_idx}"><i class="fa-solid fa-pen"></i> Edit</button>
+              <button class="btn-row btn-row-danger" data-delete="${c.item_idx}"><i class="fa-regular fa-trash-can"></i> Delete</button>
+            </div>
+          </td>
+        </tr>
+      `;
+        }).join("");
+
+        renderAdminPagination(res.pagination);
+    } catch (err) {
+        showToast("Could not load courses", err.message, "error");
+    }
 }
 
-export function openCourseModal(course) {
-    // TODO: Paste your original openCourseModal implementation
-    console.warn("openCourseModal — paste original implementation");
+export function openCourseModal(course = null) {
+    courseForm.reset();
+    courseItemIdx.value = course ? course.item_idx : "";
+    courseModalTitle.textContent = course ? `Edit Course #${course.item_idx}` : "Add Course";
+    btnSaveCourse.textContent = course ? "Save Changes" : "Create Course";
+
+    if (course) {
+        document.getElementById("course-title").value = course.title || "";
+        document.getElementById("course-description").value = course.description || "";
+        document.getElementById("course-theme").value = course.theme || "";
+        document.getElementById("course-software").value = course.software || "";
+        document.getElementById("course-job").value = course.job || "";
+        document.getElementById("course-type").value = course.type || "";
+        document.getElementById("course-duration").value = course.duration ?? "";
+        // Stored difficulty is "<level> - <Label>"; map back to the slug.
+        const level = String(course.difficulty || "").trim().charAt(0);
+        document.getElementById("course-difficulty").value =
+            ({ "1": "beginner", "2": "intermediate", "3": "advanced" })[level] || "";
+    }
+
+    populateCourseDatalists();
+    courseModal.classList.remove("hidden");
 }
+
 
 export function closeCourseModal() {
-    // TODO: Paste your original closeCourseModal implementation
-    console.warn("closeCourseModal — paste original implementation");
+    courseModal.classList.add("hidden");
 }
 
-export async function submitCourseForm(e) {
-    // TODO: Paste your original submitCourseForm implementation
-    console.warn("submitCourseForm — paste original implementation");
+export async function submitCourseForm(event) {
+    event.preventDefault();
+    const itemIdx = courseItemIdx.value;
+    const payload = courseFormPayload();
+
+    if (!payload.title) {
+        showToast("Title required", "A course needs a title.", "error");
+        return;
+    }
+
+    toggleLoading(true);
+    try {
+        if (itemIdx) {
+            await apiRequest(`/admin/courses/${itemIdx}`, "PUT", payload);
+            showToast("Course updated", `Course #${itemIdx} saved.`, "success");
+        } else {
+            const res = await apiRequest("/admin/courses", "POST", payload);
+            const avail = res.recommendation_availability || {};
+            showToast(
+                "Course created",
+                avail.text_similarity
+                    ? `Course #${res.item_idx} created.`
+                    : `Course #${res.item_idx} created — searchable now, but needs the embedding job before it appears in similarity results.`,
+                "success"
+            );
+        }
+        closeCourseModal();
+        await Promise.all([loadAdminCourses(), loadPipelineStatus()]);
+    } catch (err) {
+        showToast("Save failed", err.message, "error");
+    } finally {
+        toggleLoading(false);
+    }
 }
 
 export async function deleteCourse(itemIdx) {
-    // TODO: Paste your original deleteCourse implementation
-    console.warn("deleteCourse — paste original implementation");
+    if (!window.confirm(`Delete course #${itemIdx}? This cannot be undone.`)) return;
+
+    toggleLoading(true);
+    try {
+        await apiRequest(`/admin/courses/${itemIdx}`, "DELETE");
+        showToast("Course deleted", `Course #${itemIdx} removed.`, "success");
+    } catch (err) {
+        // The API refuses by default when the course is inside the model vocabulary,
+        // because the checkpoint keeps predicting it until retrained.
+        const forced = window.confirm(
+            `${err.message}\n\nDelete anyway?`
+        );
+        if (!forced) {
+            toggleLoading(false);
+            return;
+        }
+        try {
+            await apiRequest(`/admin/courses/${itemIdx}?force=true`, "DELETE");
+            showToast("Course deleted", `Course #${itemIdx} force-deleted.`, "info");
+        } catch (forceErr) {
+            showToast("Delete failed", forceErr.message, "error");
+            toggleLoading(false);
+            return;
+        }
+    }
+
+    await Promise.all([loadAdminCourses(), loadPipelineStatus()]);
+    toggleLoading(false);
 }
