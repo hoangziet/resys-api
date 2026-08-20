@@ -3,7 +3,7 @@
 // API request wrapper, language helper, recommendation cache.
 // -------------------------------------------------------------
 
-import { API_PREFIX, RECO_CACHE_KEY, RECO_CACHE_TTL_MS } from "./config.js";
+import { API_PREFIX, RECO_CACHE_TTL_MS } from "./config.js";
 import { state } from "./state.js";
 import { showToast } from "./ui.js";
 
@@ -13,9 +13,13 @@ export function withLang(endpoint) {
 }
 
 // --- Recommendation Cache ---
+function recoCacheKey() {
+    return `reco_cache:${state.username || "anon"}:${state.lang}`;
+}
+
 export function getRecoCache() {
     try {
-        const raw = localStorage.getItem(RECO_CACHE_KEY);
+        const raw = localStorage.getItem(recoCacheKey());
         return raw ? JSON.parse(raw) : null;
     } catch {
         return null;
@@ -24,7 +28,7 @@ export function getRecoCache() {
 
 export function setRecoCache(data) {
     try {
-        localStorage.setItem(RECO_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
+        localStorage.setItem(recoCacheKey(), JSON.stringify({ ts: Date.now(), data }));
     } catch { /* storage full */ }
 }
 
@@ -34,7 +38,7 @@ export function isRecoCacheValid(cache) {
 
 export function clearRecoCache() {
     try {
-        localStorage.removeItem(RECO_CACHE_KEY);
+        localStorage.removeItem(recoCacheKey());
     } catch { /* ignore */ }
 }
 

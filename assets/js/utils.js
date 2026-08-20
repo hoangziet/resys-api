@@ -41,3 +41,17 @@ export function getCategoryVisual(theme) {
     const found = CATEGORY_VISUALS.find(v => v.match.test(theme));
     return found || DEFAULT_CATEGORY_VISUAL;
 }
+
+export function bucketLabel(bucket) {
+    // Server buckets are "YYYY-MM-DDTHH:00" in UTC.
+    const date = new Date(`${bucket}:00Z`);
+    if (Number.isNaN(date.getTime())) return bucket;
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+export function formatMs(value) {
+    // Always milliseconds: callers render the "ms" unit themselves, so this must
+    // not switch to seconds or the unit label would contradict the number.
+    if (value === null || value === undefined) return "—";
+    return value >= 100 ? String(Math.round(value)) : value.toFixed(1);
+}

@@ -8,7 +8,6 @@ export const API_PREFIX = "/api/v1";
 export const FACET_KEYS = ["difficulty", "theme", "software", "job_type", "type"];
 export const PAGE_SIZE = 12;
 
-export const RECO_CACHE_KEY = "reco_cache";
 export const RECO_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export const CATEGORY_VISUALS = [
@@ -25,3 +24,8 @@ export const CATEGORY_VISUALS = [
     { match: /langue|language|anglais|english/i, icon: "fa-solid fa-language", cover: "cat-cover-4" },
 ];
 export const DEFAULT_CATEGORY_VISUAL = { icon: "fa-solid fa-book-open", cover: "cat-cover-7" };
+
+export const LATENCY_SERIES = [
+    { key: "avg", label: "Average", color: "var(--viz-series-avg)" },
+    { key: "p95", label: "P95", color: "var(--viz-series-p95)" }
+];

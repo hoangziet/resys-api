@@ -4,7 +4,7 @@
 // -------------------------------------------------------------
 
 import { state } from "./state.js";
-import { apiRequest } from "./api.js";
+import { clearRecoCache } from "./api.js";
 import { showToast } from "./ui.js";
 import {
     authScreen, dashboardScreen, loginForm, registerForm,
@@ -39,6 +39,7 @@ export function checkAuth() {
 }
 
 export function saveSession(token, username, role) {
+    clearRecoCache();
     state.token = token;
     state.username = username;
     state.role = role;
@@ -49,6 +50,7 @@ export function saveSession(token, username, role) {
 }
 
 export function logout() {
+    clearRecoCache();
     state.token = null;
     state.username = null;
     state.role = null;

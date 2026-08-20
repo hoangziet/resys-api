@@ -5,17 +5,17 @@
 
 import { state } from "./state.js";
 import { apiRequest, withLang } from "./api.js";
-import { showToast, toggleLoading } from "./ui.js";
+import { showToast, toggleLoading, attachLatencyHover } from "./ui.js";
 import {
     adminModelStatus, adminModelMaxLen, adminModelVocab, adminModelDim,
     btnSyncCatalog, btnRebuildEmb, btnRefreshLogs, logsTbody,
-    latencyWindowSelect, latencyTable, btnLatencyTable,
+    latencyWindowSelect, latencyTable, btnLatencyTable, pipelineBanner,
     adminCoursesTbody, adminCoursesPagination, adminCourseSearch,
-    btnAddCourse, courseModal, courseModalTitle, courseForm,
+    btnAddCourse, courseModal, courseModalTitle, courseForm, latencyTiles, latencyLegend, latencyChart,
     courseItemIdx, btnSaveCourse, btnCancelCourse, btnCloseCourseModal
 } from "./dom.js";
-import { escapeHtml } from "./utils.js";
-import { FACET_KEYS } from "./config.js";
+import { escapeHtml, bucketLabel } from "./utils.js";
+import { FACET_KEYS, LATENCY_SERIES } from "./config.js";
 
 // --- Admin course pagination state ---
 export const adminCourses = {
@@ -99,6 +99,135 @@ export async function loadLatencyStats() {
     renderLatencyTiles(res.overall);
     renderLatencyChart(res.timeseries || []);
     renderLatencyTable(res.timeseries || []);
+}
+
+function renderLatencyTiles(overall) {
+    if (!latencyTiles) return;
+    const o = overall || {};
+
+    // Median and P50 are the same percentile; they are adjacent and marked as a
+    // pair so the duplication reads as intentional rather than as a bug.
+    const tiles = [
+        { label: "Requests", value: o.count ?? 0, unit: "" },
+        { label: "Average", value: formatMs(o.avg), unit: "ms" },
+        { label: "Median", value: formatMs(o.median), unit: "ms", paired: true },
+        { label: "P50", value: formatMs(o.p50), unit: "ms", paired: true },
+        { label: "P95", value: formatMs(o.p95), unit: "ms" },
+        { label: "P99", value: formatMs(o.p99), unit: "ms" }
+    ];
+
+    latencyTiles.innerHTML = tiles.map(t => `
+    <div class="stat-tile ${t.paired ? "stat-tile-paired" : ""}">
+      <span class="stat-tile-label">${escapeHtml(t.label)}</span>
+      <span class="stat-tile-value">${escapeHtml(String(t.value))}${t.unit ? `<span class="stat-tile-unit">${escapeHtml(t.unit)}</span>` : ""
+        }</span>
+    </div>
+  `).join("");
+
+    if (latencyLegend) {
+        latencyLegend.innerHTML = LATENCY_SERIES.map(s => `
+      <span class="legend-item">
+        <span class="legend-swatch" style="background:${s.color}"></span>${escapeHtml(s.label)}
+      </span>
+    `).join("");
+    }
+}
+
+function renderLatencyChart(series) {
+    if (!latencyChart) return;
+
+    if (!series.length) {
+        latencyChart.innerHTML = `<p class="chart-placeholder">No requests recorded in this window yet.</p>`;
+        return;
+    }
+
+    const W = 720;
+    const H = 240;
+    const pad = { top: 16, right: 18, bottom: 30, left: 46 };
+    const plotW = W - pad.left - pad.right;
+    const plotH = H - pad.top - pad.bottom;
+
+    const values = series.flatMap(p => [p.avg, p.p95]).filter(v => typeof v === "number");
+    const maxVal = Math.max(...values, 1);
+    // Round the top of the scale up so ticks land on readable numbers.
+    const step = Math.pow(10, Math.floor(Math.log10(maxVal))) / 2 || 1;
+    const yMax = Math.ceil(maxVal / step) * step;
+
+    const xAt = i => pad.left + (series.length === 1 ? plotW / 2 : (i / (series.length - 1)) * plotW);
+    const yAt = v => pad.top + plotH - (v / yMax) * plotH;
+
+    const ticks = 4;
+    let gridSvg = "";
+    for (let t = 0; t <= ticks; t++) {
+        const value = (yMax / ticks) * t;
+        const y = yAt(value);
+        gridSvg += `<line class="viz-gridline" x1="${pad.left}" y1="${y}" x2="${W - pad.right}" y2="${y}" />`;
+        gridSvg += `<text class="viz-tick" x="${pad.left - 8}" y="${y + 3}" text-anchor="end">${Math.round(value)}</text>`;
+    }
+
+    // Label first / middle / last only, so ticks never collide.
+    const labelIdx = new Set([0, Math.floor((series.length - 1) / 2), series.length - 1]);
+    let xLabels = "";
+    labelIdx.forEach(i => {
+        const anchor = i === 0 ? "start" : i === series.length - 1 ? "end" : "middle";
+        xLabels += `<text class="viz-tick" x="${xAt(i)}" y="${H - 10}" text-anchor="${anchor}">${escapeHtml(bucketLabel(series[i].bucket))}</text>`;
+    });
+
+    const lines = LATENCY_SERIES.map(s => {
+        const points = series.map((p, i) => `${xAt(i).toFixed(1)},${yAt(p[s.key] || 0).toFixed(1)}`).join(" ");
+        return `<polyline class="viz-line" points="${points}" stroke="${s.color}" />`;
+    }).join("");
+
+    latencyChart.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" role="img"
+      aria-label="Latency over time: average and P95 in milliseconds">
+      ${gridSvg}
+      <line class="viz-axisline" x1="${pad.left}" y1="${pad.top + plotH}" x2="${W - pad.right}" y2="${pad.top + plotH}" />
+      ${xLabels}
+      ${lines}
+      <g id="latency-hover" style="display:none">
+        <line class="viz-crosshair" y1="${pad.top}" y2="${pad.top + plotH}" />
+        ${LATENCY_SERIES.map(s => `<circle r="5" fill="${s.color}" class="viz-marker" />`).join("")}
+      </g>
+      <rect x="${pad.left}" y="${pad.top}" width="${plotW}" height="${plotH}"
+        fill="transparent" id="latency-hitarea" />
+    </svg>
+    <div class="viz-tooltip hidden" id="latency-tooltip"></div>
+  `;
+
+    attachLatencyHover(series, xAt, yAt);
+}
+
+function renderLatencyTable(series) {
+    if (!latencyTable) return;
+    if (!series.length) {
+        latencyTable.innerHTML = `<p class="chart-placeholder">No data in this window.</p>`;
+        return;
+    }
+    latencyTable.innerHTML = `
+    <table class="viz-table">
+      <thead>
+        <tr><th>Time (UTC hour)</th><th>Requests</th><th>Average (ms)</th><th>P95 (ms)</th></tr>
+      </thead>
+      <tbody>
+        ${series.map(p => `
+          <tr>
+            <td>${escapeHtml(p.bucket)}</td>
+            <td>${p.count}</td>
+            <td>${formatMs(p.avg)}</td>
+            <td>${formatMs(p.p95)}</td>
+          </tr>
+        `).join("")}
+      </tbody>
+    </table>
+  `;
+}
+
+function formatMs(value) {
+    // Always milliseconds: callers render the "ms" unit themselves, so this must
+    // not switch to seconds or the unit label would contradict the number.
+    if (value === null || value === undefined) return "—";
+    return value >= 100 ? String(Math.round(value)) : value.toFixed(1);
 }
 
 export async function loadPipelineStatus() {
@@ -190,6 +319,108 @@ export async function loadAdminCourses() {
         renderAdminPagination(res.pagination);
     } catch (err) {
         showToast("Could not load courses", err.message, "error");
+    }
+}
+
+function renderAdminPagination(pagination) {
+    if (!adminCoursesPagination) return;
+
+    const { page, total_pages: totalPages } = pagination || {};
+
+    if (!totalPages || totalPages <= 1) {
+        adminCoursesPagination.innerHTML = "";
+        return;
+    }
+
+    let html = `
+        <button class="page-btn"
+                data-admin-page="${page - 1}"
+                ${page <= 1 ? "disabled" : ""}>
+            <i class="fa-solid fa-chevron-left"></i>
+        </button>
+    `;
+
+    const pages = [];
+
+    pages.push(1);
+
+    const start = Math.max(2, page - 2);
+    const end = Math.min(totalPages - 1, page + 2);
+
+    if (start > 2) {
+        pages.push("...");
+    }
+
+    for (let p = start; p <= end; p++) {
+        pages.push(p);
+    }
+
+    if (end < totalPages - 1) {
+        pages.push("...");
+    }
+
+    if (totalPages > 1) {
+        pages.push(totalPages);
+    }
+
+    for (const p of pages) {
+        if (p === "...") {
+            html += `<span class="pagination-ellipsis">...</span>`;
+        } else {
+            html += `
+                <button class="page-btn ${p === page ? "page-current" : ""}"
+                        data-admin-page="${p}">
+                    ${p}
+                </button>
+            `;
+        }
+    }
+
+    html += `
+        <button class="page-btn"
+                data-admin-page="${page + 1}"
+                ${page >= totalPages ? "disabled" : ""}>
+            <i class="fa-solid fa-chevron-right"></i>
+        </button>
+    `;
+
+    adminCoursesPagination.innerHTML = html;
+}
+
+function courseFormPayload() {
+    return {
+        title: document.getElementById("course-title")?.value.trim() || "",
+        description: document.getElementById("course-description")?.value.trim() || "",
+        theme: document.getElementById("course-theme")?.value.trim() || "",
+        software: document.getElementById("course-software")?.value.trim() || "",
+        job: document.getElementById("course-job")?.value.trim() || "",
+        type: document.getElementById("course-type")?.value.trim() || "",
+        difficulty: document.getElementById("course-difficulty")?.value || "",
+        duration: document.getElementById("course-duration")?.value
+            ? Number(document.getElementById("course-duration").value)
+            : null,
+        language: document.getElementById("course-language")?.value || "fr",
+        thumbnail_url: document.getElementById("course-thumbnail-url")?.value.trim() || ""
+    };
+}
+
+async function populateCourseDatalists() {
+    try {
+        const res = await apiRequest(`/courses/filters?lang=${state.lang}`, "GET");
+        const f = res.filters || {};
+
+        const setList = (id, key) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.innerHTML = (f[key] || []).map(o => `<option value="${escapeHtml(o.value)}">`).join("");
+        };
+
+        setList("dl-theme", "theme");
+        setList("dl-software", "software");
+        setList("dl-job", "job_type");
+        setList("dl-type", "type");
+    } catch {
+        // silently fail — datalists are convenience, not critical
     }
 }
 

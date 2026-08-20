@@ -44,19 +44,19 @@ export async function loadRecommendations() {
 
     if (forYouRes) {
         railForYou.innerHTML = renderCourseCards(forYouRes.items, forYouRes.source);
-    } else if (cached?.data?.forYou) {
+    } else if (isRecoCacheValid(cached) && cached?.data?.forYou) {
         railForYou.innerHTML = renderCourseCards(cached.data.forYou.items, cached.data.forYou.source);
     }
 
     if (youMayRes) {
         railYouMayLike.innerHTML = renderCourseCards(youMayRes.items, youMayRes.source);
-    } else if (cached?.data?.youMay) {
+    } else if (isRecoCacheValid(cached) && cached?.data?.youMay) {
         railYouMayLike.innerHTML = renderCourseCards(cached.data.youMay.items, cached.data.youMay.source);
     }
 
     if (popularRes) {
         railPopular.innerHTML = renderCourseCards(popularRes.items, popularRes.source);
-    } else if (cached?.data?.popular) {
+    } else if (isRecoCacheValid(cached) && cached?.data?.popular) {
         railPopular.innerHTML = renderCourseCards(cached.data.popular.items, cached.data.popular.source);
     }
 

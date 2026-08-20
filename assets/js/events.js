@@ -242,7 +242,7 @@ export function setupEventListeners() {
                 await apiRequest(`/history/?item_idx=${state.openCourse.item_idx}`, "POST");
                 showToast("Learned", "Course marked as learned!", "success");
             }
-
+            clearRecoCache();
             await loadHistory();
             updateDrawerToggleButton();
             await loadRecommendations();
@@ -262,6 +262,7 @@ export function setupEventListeners() {
         try {
             await apiRequest("/history/", "DELETE");
             showToast("Success", "Learning history cleared", "info");
+            clearRecoCache();
             await loadHistory();
             await loadRecommendations();
         } catch (err) {

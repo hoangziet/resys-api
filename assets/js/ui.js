@@ -3,7 +3,9 @@
 // Toast notifications, loading overlay, button busy state.
 // -------------------------------------------------------------
 
-import { toastContainer, loadingOverlay } from "./dom.js";
+import { toastContainer, loadingOverlay, latencyChart } from "./dom.js";
+import { LATENCY_SERIES } from "./config.js";
+import { bucketLabel, formatMs } from "./utils.js";
 
 export function showToast(title, message, type = "success") {
     const toast = document.createElement("div");
@@ -155,4 +157,68 @@ export function initMobileSidebar() {
             }
         }, 150);
     });
+}
+// A line chart in HTML is interactive by default: crosshair + tooltip.
+export function attachLatencyHover(series, xAt, yAt) {
+    const svg = latencyChart.querySelector("svg");
+    const hit = latencyChart.querySelector("#latency-hitarea");
+    const hover = latencyChart.querySelector("#latency-hover");
+    const tooltip = latencyChart.querySelector("#latency-tooltip");
+    if (!svg || !hit || !hover || !tooltip) return;
+
+    const crosshair = hover.querySelector("line");
+    const markers = hover.querySelectorAll("circle");
+
+    function hide() {
+        hover.style.display = "none";
+        tooltip.classList.add("hidden");
+    }
+
+    hit.addEventListener("mousemove", event => {
+        const box = svg.getBoundingClientRect();
+        // Map client px into viewBox units.
+        const scale = 720 / box.width;
+        const vx = (event.clientX - box.left) * scale;
+
+        let nearest = 0;
+        let bestDist = Infinity;
+        series.forEach((_, i) => {
+            const dist = Math.abs(xAt(i) - vx);
+            if (dist < bestDist) {
+                bestDist = dist;
+                nearest = i;
+            }
+        });
+
+        const point = series[nearest];
+        const x = xAt(nearest);
+        crosshair.setAttribute("x1", x);
+        crosshair.setAttribute("x2", x);
+        LATENCY_SERIES.forEach((s, idx) => {
+            markers[idx].setAttribute("cx", x);
+            markers[idx].setAttribute("cy", yAt(point[s.key] || 0));
+        });
+        hover.style.display = "";
+
+        tooltip.innerHTML = `
+      <div class="viz-tooltip-time">${escapeHtml(bucketLabel(point.bucket))} · ${point.count} req</div>
+      ${LATENCY_SERIES.map(s => `
+        <div class="viz-tooltip-row">
+          <span><span class="legend-swatch" style="background:${s.color}"></span> ${escapeHtml(s.label)}</span>
+          <span class="viz-tooltip-value">${formatMs(point[s.key])} ms</span>
+        </div>
+      `).join("")}
+    `;
+        tooltip.style.left = `${(x / scale)}px`;
+        tooltip.style.top = `${(yAt(Math.max(point.avg || 0, point.p95 || 0)) / scale)}px`;
+        tooltip.classList.remove("hidden");
+    });
+
+    hit.addEventListener("mouseleave", hide);
+}
+function escapeHtml(str) {
+    if (str == null) return "";
+    const div = document.createElement("div");
+    div.appendChild(document.createTextNode(String(str)));
+    return div.innerHTML;
 }
