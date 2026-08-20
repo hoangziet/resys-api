@@ -78,46 +78,92 @@ def _token_clause() -> str:
 
 def build_filters(
     lang: str, tokens: list[str], facets: dict[str, list[str]]
-) -> tuple[str, list]:
-    """Build the WHERE clause shared by the page query and its COUNT twin.
+) -> tuple[str, list, str, list]:
+    """Build WHERE and facet-ranking clauses.
 
-    Every token must match somewhere (AND across tokens, OR across columns), and
-    each facet group contributes one EXISTS so groups AND together while the IN
-    inside a group makes its values OR together. An omitted filter adds nothing.
+    Every token must match somewhere (AND across tokens, OR across columns).
+    Each facet group contributes one EXISTS so groups AND together while the
+    values inside a group are OR for filtering.
+
+    For ranking, each matched facet value contributes one point. Therefore,
+    items matching more selected values are ranked higher.
     """
     clauses: list[str] = []
     params: list = []
 
+    ranking_parts: list[str] = []
+    ranking_params: list = []
+
+    # Free-text search
     for token in tokens:
         like = f"%{escape_like(token)}%"
         clauses.append(_token_clause())
         params.extend([like] * len(SEARCH_COLUMNS))
 
+    # Facets
     for kind, slugs in facets.items():
         if not slugs:
             continue
+
         placeholders = ", ".join("?" for _ in slugs)
+
+        # Filtering:
+        # The item must match at least one selected value in this group.
         clauses.append(
             "EXISTS (SELECT 1 FROM course_facets f "
-            "WHERE f.item_idx = c.item_idx AND f.kind = ? AND f.lang = ? "
+            "WHERE f.item_idx = c.item_idx "
+            "AND f.kind = ? "
+            "AND f.lang = ? "
             f"AND f.slug IN ({placeholders}))"
         )
         params.extend([kind, lang, *slugs])
 
+        # Ranking:
+        # Count how many selected values this item matches.
+        ranking_parts.append(
+            "(SELECT COUNT(*) "
+            "FROM course_facets rf "
+            "WHERE rf.item_idx = c.item_idx "
+            "AND rf.kind = ? "
+            "AND rf.lang = ? "
+            f"AND rf.slug IN ({placeholders}))"
+        )
+        ranking_params.extend([kind, lang, *slugs])
+
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-    return where, params
 
+    if ranking_parts:
+        facet_score = " + ".join(ranking_parts)
+        facet_order = f"({facet_score}) DESC, "
+    else:
+        facet_order = ""
 
-def _order_by(tokens: list[str]) -> tuple[str, list]:
-    """Rank title matches above body-only matches, then item_idx for stable paging."""
+    return where, params, facet_order, ranking_params
+
+def _order_by(
+    tokens: list[str],
+    facet_order: str = "",
+    facet_params: list | None = None,
+) -> tuple[str, list]:
+    """Rank facet matches first, then title matches, then item_idx."""
+    facet_params = facet_params or []
+
     if not tokens:
-        return " ORDER BY c.item_idx", []
+        return f" ORDER BY {facet_order}c.item_idx", facet_params
 
     scores = " + ".join(
-        "CASE WHEN c.title LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END" for _ in tokens
+        "CASE WHEN c.title LIKE ? ESCAPE '\\' THEN 1 ELSE 0 END"
+        for _ in tokens
     )
-    params = [f"%{escape_like(token)}%" for token in tokens]
-    return f" ORDER BY ({scores}) DESC, c.item_idx", params
+    search_params = [
+        f"%{escape_like(token)}%"
+        for token in tokens
+    ]
+
+    return (
+        f" ORDER BY {facet_order}({scores}) DESC, c.item_idx",
+        [*facet_params, *search_params],
+    )
 
 
 def search_courses(
@@ -136,8 +182,16 @@ def search_courses(
     facets = facets or {}
     tokens = tokenize(q)
     source, thumbnail = _source_and_thumbnail(lang)
-    where, where_params = build_filters(lang, tokens, facets)
-    order_by, order_params = _order_by(tokens)
+    
+
+    where, where_params, facet_order, facet_params = build_filters(
+        lang, tokens, facets
+    )
+    order_by, order_params = _order_by(
+        tokens,
+        facet_order,
+        facet_params,
+    )
     columns = ", ".join([*_COURSE_SELECT_COLUMNS, thumbnail])
     offset = (page - 1) * limit
 
